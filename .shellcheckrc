@@ -1,0 +1,12 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# shellcheck config
+# ─────────────────────────────────────────────────────────────────────────────
+
+shell=bash
+
+# shellcheck is allowed to follow files that are injected via "source" relative to the folder
+external-sources=true
+source-path=SCRIPTDIR
+
+# checks capitalised variables that are never called
+enable=check-unassigned-uppercase

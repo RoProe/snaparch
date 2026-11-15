@@ -1,0 +1,25 @@
+# Opens PRs automatically, if there are new versions of:
+# - github actions in .github/workflows/
+# - pre-commit hooks
+# ...both are pinned via commit-hash.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions: # collect all updates in one PR
+        patterns: ["*"]
+
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      pre-commit:
+        patterns: ["*"]

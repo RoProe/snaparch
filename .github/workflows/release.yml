@@ -1,0 +1,75 @@
+# builds release on push with version tag
+#   (e.g. git tag -a v0.1.0 -m "..."  &&  git push origin v0.1.0)
+#
+# first linting, and if it passes, build tarball + SHA256SUMS and publish as github-release
+# dependabot (.github/dependabot.yml) checks new version numbers of pinned actions weekly
+# TODO: maybe later an E2E test in a VM via needs
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"] # v0.1.0, v0.2.0-rc1, ...
+
+permissions:
+  contents: read # default, only publish gets write permissions
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  publish:
+    name: Build & publish release
+    needs: lint # only starts if lint is green
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed git github-cli
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # all branches and tags, needed for main-check
+          persist-credentials: false
+
+      # container runs as root but the workspace is owned by another user
+      # needs to be marked safe (otherwise "dubious ownership")
+      - name: Mark workspace as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # safety: a release should only be based on main
+      - name: Ensure tag points to a commit on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME does not point to a commit on main."
+            exit 1
+          fi
+
+      - name: Build tarball and checksums
+        run: |
+          # owner/repo -> repo
+          name="${GITHUB_REPOSITORY#*/}-${GITHUB_REF_NAME}"
+          mkdir -p dist
+          git archive --format=tar.gz --prefix="${name}/" \
+            -o "dist/${name}.tar.gz" "$GITHUB_REF_NAME"
+          (cd dist && sha256sum -- *.tar.gz > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          flags=(--verify-tag --generate-notes)
+          # tags with hyphen are marked as pre-release
+          if [[ $GITHUB_REF_NAME == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* "${flags[@]}"

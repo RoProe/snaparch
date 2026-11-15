@@ -1,0 +1,13 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# defines how git handles data when saving
+# ─────────────────────────────────────────────────────────────────────────────
+
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.service text eol=lf
+
+# do not touch binaries
+*.png  binary
+*.jpg  binary
+*.gz   binary

@@ -1,0 +1,32 @@
+# ── Editor ────────────────────────────────────────────────────────────────────
+*.swp
+*~
+.vscode/
+.idea/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+
+# ── Build-Artefacts (release.yml builds in dist/) ───────────────────────────────
+dist/
+*.efi
+*.img
+*.iso
+*.qcow2
+
+# ── Secrets – (e.g. SecureBoot-Keys)
+*.pem
+*.key
+*.der
+*.auth
+*.esl
+
+# Env
+.env
+.env.*
+# Personal Installer-Config
+*.local.conf
+
+# ── local working dicts ──────────────────────────────────────────────────────
+tmp/
+.cache/

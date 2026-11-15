@@ -1,0 +1,57 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# pre-commit
+# runs locally before every commit and in CI (lint.yml)
+#
+#
+# needed:
+#   sudo pacman -S --needed pre-commit shellcheck shfmt actionlint gitleaks
+#   pre-commit install
+# ─────────────────────────────────────────────────────────────────────────────
+minimum_pre_commit_version: "3.2.0"
+
+repos:
+  # ── standard hooks ─────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+      # these three repair by themselves but interrupt the commit. check manually and add again
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+      # these only check
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files # Standard: 500 KB
+      - id: detect-private-key
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  # ── own hooks with preinstalled tools … see above … ─────────────────────────
+  - repo: local
+    hooks:
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        types: [shell]
+
+      - id: shfmt
+        name: shfmt (Formatierung, Regeln aus .editorconfig)
+        entry: shfmt --diff
+        language: system
+        types: [shell]
+
+      - id: actionlint
+        name: actionlint (GitHub-Workflows)
+        entry: actionlint
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+
+      - id: gitleaks
+        name: gitleaks (Secrets im Commit)
+        entry: gitleaks git --pre-commit --staged --redact --verbose
+        language: system
+        pass_filenames: false

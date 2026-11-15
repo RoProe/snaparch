@@ -1,0 +1,72 @@
+# checks the repo with each PR and Push to main
+#
+# runs 'pre-commit run --all-files'
+# the rules can be found in .pre-commit-config.yaml
+# runs in an arch container, so tool versions are rolling and from the official repos
+#
+# dependabot checks and exchanges version numbers of github actions weekly
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+# a new push cancels an older run
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# automatically sets: bash --noprofile --norc -eo pipefail
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  pre-commit:
+    name: pre-commit (Arch)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 15
+    steps:
+      - name: Install tools
+        run: |
+          pacman -Syu --noconfirm --needed \
+            git shellcheck shfmt pre-commit actionlint gitleaks
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # check whole history
+          persist-credentials: false
+
+      # mark as safe since container runs as root. without it would result in dubious ownership
+      - name: Mark workspace as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Get tool versions
+        id: py
+        run: |
+          echo "ver=$(python -c 'import platform; print(platform.python_version())')" >> "$GITHUB_OUTPUT"
+          echo "pc=$(pre-commit --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+
+      # pre-commit loads hooks and builds a python environment.
+      # The cache minimises that. Key = python version + pre-commit version + config hash
+      # --> a change in either creates a fresh cache
+      - name: Cache pre-commit environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-py${{ steps.py.outputs.ver }}-pc${{ steps.py.outputs.pc }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit on all files
+        run: pre-commit run --all-files --show-diff-on-failure --color=always
+
+      # gitleaks checks whole history (locally it only checks the current commit)
+      - name: Scan full git history for secrets
+        run: gitleaks git --redact --verbose .
