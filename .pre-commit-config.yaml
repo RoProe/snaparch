@@ -4,7 +4,7 @@
 #
 #
 # needed:
-#   sudo pacman -S --needed pre-commit shellcheck shfmt actionlint gitleaks
+#   sudo pacman -S --needed pre-commit shellcheck shfmt actionlint gitleaks zizmor
 #   pre-commit install
 # ─────────────────────────────────────────────────────────────────────────────
 minimum_pre_commit_version: "3.2.0"
@@ -39,7 +39,7 @@ repos:
         types: [shell]
 
       - id: shfmt
-        name: shfmt (Formatierung, Regeln aus .editorconfig)
+        name: shfmt (formatting, rules from .editorconfig)
         entry: shfmt --diff
         language: system
         types: [shell]
@@ -57,7 +57,7 @@ repos:
         files: ^\.github/(workflows/.*\.ya?ml|dependabot\.ya?ml)$
 
       - id: gitleaks
-        name: gitleaks (Secrets im Commit)
+        name: gitleaks (Secrets in commit)
         entry: gitleaks git --pre-commit --staged --redact --verbose
         language: system
         pass_filenames: false
