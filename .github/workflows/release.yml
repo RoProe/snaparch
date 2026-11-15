@@ -19,13 +19,13 @@ defaults:
 
 jobs:
   lint:
-    uses: ./.github/workflows/lint.yml
+    uses: ./.github/workflows/lint.yml # zizmor: ignore[self-repository] actionlint doesn't support $/ yet
 
   publish:
     name: Build & publish release
     needs: lint # only starts if lint is green
     runs-on: ubuntu-latest
-    container: archlinux:latest
+    container: archlinux:latest # zizmor: ignore[unpinned-images] rolling by design, pacman -Syu runs first
     timeout-minutes: 10
     permissions:
       contents: write
