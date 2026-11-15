@@ -7,7 +7,7 @@ DONE_FLAG="/run/snapshot-menu-done"
 [ -f "$DONE_FLAG" ] && return 0
 
 mkdir -p "$BTRFS_MNT"
-if ! mount -o ro,subvolid=5 "$BTRFS_DEV" "$BTRFS_MNT" 2>/dev/null; then
+if ! mount -o ro,subvolid=5 "$BTRFS_DEV" "$BTRFS_MNT" 2> /dev/null; then
   return 0
 fi
 touch "$DONE_FLAG"
@@ -34,10 +34,10 @@ while IFS= read -r info; do
   stype="$(xml_tag type "$info")"
 
   case "$stype" in
-    timeline) color="\033[32m" ;;  # green
-    pre)      color="\033[33m" ;;  # yellow
-    post)     color="\033[31m" ;;  # red
-    *)        color="" ;;
+    timeline) color="\033[32m" ;; # green
+    pre) color="\033[33m" ;;      # yellow
+    post) color="\033[31m" ;;     # red
+    *) color="" ;;
   esac
 
   SNAP_IDS+=("$num")
@@ -45,18 +45,18 @@ while IFS= read -r info; do
   SNAP_SEARCH+=("${num} ${snap_date} ${stype} ${desc}")
 
 done < <(
-  find "$BTRFS_MNT/@snapshots" -name "info.xml" 2>/dev/null \
+  find "$BTRFS_MNT/@snapshots" -name "info.xml" 2> /dev/null \
     | sed -n 's|.*/@snapshots/\([0-9]\+\)/info\.xml$|\1 &|p' \
     | sort -nr \
     | head -20 \
     | cut -d' ' -f2-
 )
 
-umount "$BTRFS_MNT" 2>/dev/null || true
+umount "$BTRFS_MNT" 2> /dev/null || true
 
 [ ${#SNAP_IDS[@]} -eq 0 ] && return 0
 
-exec </dev/console >/dev/console 2>/dev/console
+exec < /dev/console > /dev/console 2> /dev/console
 
 # reduce kernel spam, terminal safety and hide cursor
 dmesg -n 1
@@ -64,14 +64,14 @@ trap 'stty sane 2>/dev/null; echo -e "\033[0m\033[?25h"' EXIT
 echo -ne "\033[?25l"
 
 # get screen height in rows, fallback is 24
-TERM_ROWS=$(stty size 2>/dev/null | awk '{print $1}')
-(( TERM_ROWS > 0 )) || TERM_ROWS=24
+TERM_ROWS=$(stty size 2> /dev/null | awk '{print $1}')
+((TERM_ROWS > 0)) || TERM_ROWS=24
 
 # Header (Box 8 rows + Search row = 9) + Footer (selected 4 rows + countdown 2 rows = 6) = total of 14 rows
 HEADER_LINES=9
 FOOTER_LINES=6
-VISIBLE=$(( TERM_ROWS - HEADER_LINES - FOOTER_LINES ))
-(( VISIBLE < 3 )) && VISIBLE=3
+VISIBLE=$((TERM_ROWS - HEADER_LINES - FOOTER_LINES))
+((VISIBLE < 3)) && VISIBLE=3
 
 selected=0
 TIMEOUT=5
@@ -98,7 +98,6 @@ apply_filter() {
 
 apply_filter
 
-
 # ============= First MENU =========================================
 pre_menu() {
   local timeout=5
@@ -113,7 +112,7 @@ pre_menu() {
     echo "│                 Boot Menu                    │"
     echo "├──────────────────────────────────────────────┤"
     for i in "${!options[@]}"; do
-      if (( i == selected )); then
+      if ((i == selected)); then
         echo -e "> \033[1;37;44m ${options[$i]} \033[0m"
       else
         echo "  ${options[$i]}"
@@ -126,12 +125,11 @@ pre_menu() {
     local now=$(date +%s)
     local remaining=$((timeout - (now - start)))
 
-    if (( remaining <= 0 )); then
-      return 0  # normal boot
+    if ((remaining <= 0)); then
+      return 0 # normal boot
     fi
 
     echo "Auto boot in ${remaining}s..."
-
 
     if read -rsn1 -t 1 key; then
       case "$key" in
@@ -145,7 +143,7 @@ pre_menu() {
         "k") ((selected--)) ;;
         "j") ((selected++)) ;;
 
-        $'\n'|$'\r')
+        $'\n' | $'\r')
           break # confirm by enter
           ;;
 
@@ -160,15 +158,15 @@ pre_menu() {
           ;;
       esac
     fi
-        # clamp
-    (( selected < 0 )) && selected=0
-    (( selected > 1 )) && selected=1
+    # clamp
+    ((selected < 0)) && selected=0
+    ((selected > 1)) && selected=1
   done
 
-  if (( selected == 0 )); then
-    return 0   # normal boot
+  if ((selected == 0)); then
+    return 0 # normal boot
   else
-    return 1   # snapshot menu
+    return 1 # snapshot menu
   fi
 }
 
@@ -180,7 +178,7 @@ draw_menu() {
 
   # underline in search row if in filter mode
   local search_display
-  if (( filter_mode )); then
+  if ((filter_mode)); then
     search_display="${filter}_"
   else
     search_display="${filter}"
@@ -197,28 +195,28 @@ draw_menu() {
   echo "└──────────────────────────────────────────────┘"
   echo ""
 
-  if (( total == 0 )); then
+  if ((total == 0)); then
     echo "   (no results – ESC to clear filter)"
-    for (( i=1; i<VISIBLE; i++ )); do echo ""; done
+    for ((i = 1; i < VISIBLE; i++)); do echo ""; done
   else
     # Viewport: keep selected centered
-    local viewport_start=$(( selected - VISIBLE/2 ))
-    (( viewport_start < 0 )) && viewport_start=0
-    local viewport_end=$(( viewport_start + VISIBLE - 1 ))
-    (( viewport_end >= total )) && viewport_end=$(( total - 1 ))
+    local viewport_start=$((selected - VISIBLE / 2))
+    ((viewport_start < 0)) && viewport_start=0
+    local viewport_end=$((viewport_start + VISIBLE - 1))
+    ((viewport_end >= total)) && viewport_end=$((total - 1))
     # move viewport top to keep visible full
-    (( viewport_start > viewport_end - VISIBLE + 1 )) && viewport_start=$(( viewport_end - VISIBLE + 1 ))
-    (( viewport_start < 0 )) && viewport_start=0
+    ((viewport_start > viewport_end - VISIBLE + 1)) && viewport_start=$((viewport_end - VISIBLE + 1))
+    ((viewport_start < 0)) && viewport_start=0
 
     # scroll-indicator top
-    if (( viewport_start > 0 )); then
+    if ((viewport_start > 0)); then
       echo "   ↑ ${viewport_start} more above..."
     else
       echo ""
     fi
 
     # visible region
-    for (( i=viewport_start; i<=viewport_end; i++ )); do
+    for ((i = viewport_start; i <= viewport_end; i++)); do
       local idx="${FILTERED_IDS[$i]}"
       if [[ $i -eq $selected ]]; then
         echo -e " > \033[1;37;44m ${SNAP_LABELS[$idx]} \033[0m"
@@ -228,8 +226,8 @@ draw_menu() {
     done
 
     # scroll-indicator bottom
-    local remaining_below=$(( total - viewport_end - 1 ))
-    if (( remaining_below > 0 )); then
+    local remaining_below=$((total - viewport_end - 1))
+    if ((remaining_below > 0)); then
       echo "   ↓ ${remaining_below} more beneath..."
     else
       echo ""
@@ -237,7 +235,7 @@ draw_menu() {
   fi
 
   echo ""
-  if (( total > 0 )); then
+  if ((total > 0)); then
     local real_idx="${FILTERED_IDS[$selected]}"
     echo "  ID:   ${SNAP_IDS[$real_idx]}"
     echo "  Path: @snapshots/${SNAP_IDS[$real_idx]}/snapshot"
@@ -258,10 +256,10 @@ while true; do
 
   now=$(date +%s)
   elapsed=$((now - start_time))
-  if (( user_interacted == 0 )); then
+  if ((user_interacted == 0)); then
     remaining=$((TIMEOUT - elapsed))
 
-    if (( remaining <= 0 )); then
+    if ((remaining <= 0)); then
       echo ""
       echo "Auto boot..."
       CHOICE=0
@@ -270,9 +268,9 @@ while true; do
   fi
 
   echo ""
-  if (( user_interacted == 0 )); then
+  if ((user_interacted == 0)); then
     echo "Auto boot in ${remaining}s..."
-  elif (( filter_mode )); then
+  elif ((filter_mode)); then
     echo "Search mode – ESC to clear"
   else
     echo "Auto boot disabled. Press Enter or q for boot selection"
@@ -284,9 +282,8 @@ while true; do
     continue
   fi
 
-
   # --- Filter Mode --------------------------
-  if (( filter_mode )); then
+  if ((filter_mode)); then
     if [[ "$key" == $'\x1b' ]]; then
       filter=""
       filter_mode=0
@@ -339,7 +336,7 @@ while true; do
       selected=$((${#FILTERED_IDS[@]} - 1))
 
     elif [[ "$key" == $'\n' || "$key" == $'\r' || -z "$key" ]]; then #enter
-      if (( ${#FILTERED_IDS[@]} > 0 )); then
+      if ((${#FILTERED_IDS[@]} > 0)); then
         CHOICE="${SNAP_IDS[${FILTERED_IDS[$selected]}]}"
         break
       fi
@@ -351,18 +348,18 @@ while true; do
 
     total=${#FILTERED_IDS[@]}
 
-    if (( total == 0 )); then
+    if ((total == 0)); then
       selected=0
     else
       max=$((total - 1))
-      (( selected < 0 )) && selected=0
-      (( selected > max )) && selected=$max
+      ((selected < 0)) && selected=0
+      ((selected > max)) && selected=$max
     fi
   fi
 done
 
 # restore terminal
-stty sane 2>/dev/null || true
+stty sane 2> /dev/null || true
 echo -ne "\033[?25h"
 
 if [[ "$CHOICE" == "0" || -z "$CHOICE" ]]; then

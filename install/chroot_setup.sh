@@ -27,7 +27,7 @@ die() {
 
 # ── passwords ─────────────────────────────────────────────────────────────────
 echo "Set ROOT password:"
-passwd </dev/tty
+passwd < /dev/tty
 
 # ── timezone & clock ──────────────────────────────────────────────────────────
 ln -sf /usr/share/zoneinfo/"${TIMEZONE}" /etc/localtime
@@ -37,25 +37,25 @@ hwclock --systohc
 # set also before in chroot
 sed -i "s/^#${LOCALE}/${LOCALE}/" /etc/locale.gen
 locale-gen
-echo "LANG=${LOCALE}" >/etc/locale.conf
+echo "LANG=${LOCALE}" > /etc/locale.conf
 
 # ── vconsole ──────────────────────────────────────────────────────────────────
-printf "KEYMAP=${KEYMAP}\n" >/etc/vconsole.conf
+printf "KEYMAP=${KEYMAP}\n" > /etc/vconsole.conf
 
 # ── hostname ──────────────────────────────────────────────────────────────────
-echo "${HOSTNAME}" >/etc/hostname
+echo "${HOSTNAME}" > /etc/hostname
 
 # ── user ──────────────────────────────────────────────────────────────────────
 useradd -m -G wheel "${USERNAME}"
 echo "Set password for ${USERNAME}:"
-passwd "${USERNAME}" </dev/tty
+passwd "${USERNAME}" < /dev/tty
 sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
 
 # ── autologin (optional) ──────────────────────────────────────────────────────
 if $ENABLE_AUTOLOGIN; then
   info "Configuring autologin..."
   mkdir -p /etc/systemd/system/getty@tty1.service.d
-  cat >/etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF
+  cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty -a ${USERNAME} --noclear %I \$TERM
@@ -64,7 +64,7 @@ fi
 
 # ── install user packages ─────────────────────────────────────────────────────
 info "Installing selected packages..."
-read -ra PKG_ARRAY <<<"$ALL_PKGS"
+read -ra PKG_ARRAY <<< "$ALL_PKGS"
 pacman -S --noconfirm --needed "${PKG_ARRAY[@]}"
 
 # ── activate services ────────────────────────────────────────────
@@ -86,7 +86,7 @@ if $ENABLE_SWAP; then
   #TODO: check whether this has an impact on life expectancy of SSD since often writes
   #TODO: maybe also possibility for suspend to RAM?
   mkdir -p /etc/systemd/sleep.conf.d
-  cat >/etc/systemd/sleep.conf.d/hibernate.conf <<'EOF'
+  cat > /etc/systemd/sleep.conf.d/hibernate.conf << 'EOF'
 [Sleep]
 AllowSuspend=no
 AllowHibernation=yes
@@ -97,7 +97,7 @@ EOF
 
   # Allow wheel users to hibernate without sudo password via polkit
   mkdir -p /etc/polkit-1/rules.d
-  cat >/etc/polkit-1/rules.d/10-hibernate.rules <<'EOF'
+  cat > /etc/polkit-1/rules.d/10-hibernate.rules << 'EOF'
 polkit.addRule(function(action, subject) {
     if ((action.id == "org.freedesktop.login1.hibernate" ||
          action.id == "org.freedesktop.login1.hibernate-multiple-sessions") &&
@@ -113,7 +113,7 @@ fi
 # depending on active pkgbase chooses correct outfile in dracut-install or file to remove in dracut.remove
 mkdir -p /usr/local/bin /etc/pacman.d/hooks
 
-cat >/usr/local/bin/dracut-install.sh <<'EOF'
+cat > /usr/local/bin/dracut-install.sh << 'EOF'
 #!/usr/bin/env bash
 mkdir -p /boot/efi/EFI/Linux
 while read -r line; do
@@ -130,7 +130,7 @@ while read -r line; do
 done
 EOF
 
-cat >/usr/local/bin/dracut-remove.sh <<'EOF'
+cat > /usr/local/bin/dracut-remove.sh << 'EOF'
 #!/usr/bin/env bash
 while read -r line; do
     if [[ "$line" == 'usr/lib/modules/'+([^/])'/pkgbase' ]]; then
@@ -149,7 +149,7 @@ EOF
 chmod +x /usr/local/bin/dracut-install.sh /usr/local/bin/dracut-remove.sh
 
 # ── pacman hooks for dracut ───────────────────────────────────────────────────
-cat >/etc/pacman.d/hooks/90-dracut-install.hook <<'EOF'
+cat > /etc/pacman.d/hooks/90-dracut-install.hook << 'EOF'
 [Trigger]
 Type = Path
 Operation = Install
@@ -164,7 +164,7 @@ Depends = dracut
 NeedsTargets
 EOF
 
-cat >/etc/pacman.d/hooks/60-dracut-remove.hook <<'EOF'
+cat > /etc/pacman.d/hooks/60-dracut-remove.hook << 'EOF'
 [Trigger]
 Type = Path
 Operation = Remove
@@ -180,11 +180,11 @@ EOF
 # ── dracut config ─────────────────────────────────────────────────────────────
 mkdir -p /etc/dracut.conf.d
 
-cat >/etc/dracut.conf.d/cmdline.conf <<EOF
+cat > /etc/dracut.conf.d/cmdline.conf << EOF
 kernel_cmdline="rd.luks.name=${LUKS_UUID}=cryptroot root=/dev/mapper/cryptroot rootfstype=btrfs rootflags=rw,noatime,compress=zstd,subvol=@${RESUME_ARGS}"
 EOF
 
-cat >/etc/dracut.conf.d/flags.conf <<'EOF'
+cat > /etc/dracut.conf.d/flags.conf << 'EOF'
 compress="zstd"
 hostonly="yes"
 add_dracutmodules+=" snapshot-menu "
@@ -192,14 +192,14 @@ EOF
 
 # ── Nvidia dracut config ──────────────────────────────────────────────────────
 if [[ "$GPU_CHOICE" == nvidia || "$GPU_CHOICE" == hybrid-nvidia* ]]; then
-  cat >/etc/dracut.conf.d/nvidia.conf <<'EOF'
+  cat > /etc/dracut.conf.d/nvidia.conf << 'EOF'
 add_drivers+=" nvidia nvidia_modeset nvidia_uvm nvidia_drm "
 EOF
 
   # Wayland requires DRM modesetting; fbdev needed for early KMS
   sed -i 's/"$/ nvidia_drm.modeset=1 nvidia_drm.fbdev=1"/' /etc/dracut.conf.d/cmdline.conf
 
-  cat >/etc/pacman.d/hooks/nvidia-dracut.hook <<'EOF'
+  cat > /etc/pacman.d/hooks/nvidia-dracut.hook << 'EOF'
 [Trigger]
 Type = Package
 Operation = Install
@@ -215,7 +215,7 @@ EOF
 fi
 
 if [[ "$GPU_CHOICE" == "nvidia-legacy" ]]; then
-  cat >/etc/modprobe.d/nvidia.conf <<'EOF'
+  cat > /etc/modprobe.d/nvidia.conf << 'EOF'
 options nvidia-drm modeset=1
 options nvidia NVreg_PreserveVideoMemoryAllocations=1
 EOF
@@ -223,12 +223,12 @@ EOF
   # prepare dracut cmdline
   sed -i 's/"$/ nvidia_drm.modeset=1 nvidia_drm.fbdev=1"/' /etc/dracut.conf.d/cmdline.conf
 
-  cat >/etc/dracut.conf.d/nvidia.conf <<'EOF'
+  cat > /etc/dracut.conf.d/nvidia.conf << 'EOF'
 add_drivers+=" nvidia nvidia_modeset nvidia_uvm nvidia_drm "
 EOF
 
   # hook to rebuild UKI after AUR-install
-  cat >/etc/pacman.d/hooks/nvidia-legacy-dracut.hook <<'EOF'
+  cat > /etc/pacman.d/hooks/nvidia-legacy-dracut.hook << 'EOF'
 [Trigger]
 Type = Package
 Operation = Install
@@ -246,7 +246,7 @@ fi
 # ── snapper ───────────────────────────────────────────────────────────────────
 
 mkdir -p /etc/snapper/configs
-cat >/etc/snapper/configs/root <<'EOF'
+cat > /etc/snapper/configs/root << 'EOF'
 SUBVOLUME="/"
 FSTYPE="btrfs"
 QGROUP=""
@@ -270,7 +270,7 @@ TIMELINE_LIMIT_MONTHLY="6"
 TIMELINE_LIMIT_YEARLY="2"
 EOF
 
-echo 'SNAPPER_CONFIGS="root"' >/etc/conf.d/snapper
+echo 'SNAPPER_CONFIGS="root"' > /etc/conf.d/snapper
 
 chmod 750 /.snapshots
 chown :wheel /.snapshots
@@ -284,12 +284,12 @@ if $ENABLE_SECUREBOOT; then
   pacman -S --noconfirm sbctl
   sbctl create-keys
 
-  cat >/etc/dracut.conf.d/secureboot.conf <<'EOF'
+  cat > /etc/dracut.conf.d/secureboot.conf << 'EOF'
 uefi_secureboot_cert="/var/lib/sbctl/keys/db/db.pem"
 uefi_secureboot_key="/var/lib/sbctl/keys/db/db.key"
 EOF
 
-  cat >/etc/pacman.d/hooks/zz-sbctl.hook <<'EOF'
+  cat > /etc/pacman.d/hooks/zz-sbctl.hook << 'EOF'
 [Trigger]
 Type = Path
 Operation = Install
@@ -309,7 +309,7 @@ EOF
 
   # hook for lts
   if $ENABLE_LTS; then
-    cat >/etc/pacman.d/hooks/zz-sbctl-lts.hook <<'EOF'
+    cat > /etc/pacman.d/hooks/zz-sbctl-lts.hook << 'EOF'
 [Trigger]
 Type = Path
 Operation = Install
@@ -381,7 +381,7 @@ if [[ -n "${WEBAPPS}" ]]; then
     [[ -z "${WEBAPP_URLS[$app]:-}" ]] && continue
     PROFILE_DIR="/home/${USERNAME}/.mozilla/firefox/webapps/${app}"
     mkdir -p "$PROFILE_DIR"
-    tee "${DESKTOP_DIR}/${app}-webapp.desktop" >/dev/null <<EOF
+    tee "${DESKTOP_DIR}/${app}-webapp.desktop" > /dev/null << EOF
 [Desktop Entry]
 Name=${WEBAPP_NAMES[$app]}
 Exec=firefox --profile ${PROFILE_DIR} --new-window ${WEBAPP_URLS[$app]}
@@ -400,7 +400,7 @@ fi
 # ── Post Install Script and AUR setup ───────────────────────────────────────────────────────────
 
 # --- base ---------------------------------------------------------------------------------------
-cat >/home/"${USERNAME}"/post-install.sh <<EOF
+cat > /home/"${USERNAME}"/post-install.sh << EOF
 #!/usr/bin/env bash
 set -euo pipefail
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
@@ -410,10 +410,10 @@ EOF
 
 # --- AUR (optional) -----------------------------------------------------------------------------
 if [[ -n "${PKGS_AUR:-}" ]] && [[ -n "${AUR_HELPER:-}" ]]; then
-  echo "${PKGS_AUR}" | tr ' ' '\n' | grep -v '^$' >/home/"${USERNAME}"/aur-packages.txt
+  echo "${PKGS_AUR}" | tr ' ' '\n' | grep -v '^$' > /home/"${USERNAME}"/aur-packages.txt
   chown "${USERNAME}":"${USERNAME}" /home/"${USERNAME}"/aur-packages.txt
 
-  cat >>/home/"${USERNAME}"/post-install.sh <<EOF
+  cat >> /home/"${USERNAME}"/post-install.sh << EOF
 info "Installing ${AUR_HELPER}..."
 cd /tmp
 git clone https://aur.archlinux.org/${AUR_HELPER}.git
@@ -432,7 +432,7 @@ fi
 
 # --- Nvidia (optional) ---------------------------------------------------------------------------
 if [[ "${GPU_CHOICE:-}" == nvidia* || "${GPU_CHOICE:-}" == hybrid-nvidia* ]]; then
-  cat >>/home/"${USERNAME}"/post-install.sh <<'EOF'
+  cat >> /home/"${USERNAME}"/post-install.sh << 'EOF'
 info "Writing Hyprland nvidia env config..."
 mkdir -p "$HOME/.config/hypr"
 cat > "$HOME/.config/hypr/nvidia.conf" << 'HYPRCONF'
@@ -450,7 +450,7 @@ fi
 #TODO fetch dotfiles from repo, set up zsh with highlighting, fuzzyfind, basic rice, QOL features
 
 # --- add summary and set zsh as default ----------------------------------------------------------
-cat >>/home/"${USERNAME}"/post-install.sh <<'EOF'
+cat >> /home/"${USERNAME}"/post-install.sh << 'EOF'
 info "Setting zsh as default shell..."
 chsh -s /bin/zsh
 

@@ -41,7 +41,7 @@ die() {
 # am I root, does RAM suffice, UEFI enabled?
 [[ $EUID -eq 0 ]] || die "Run as root."
 [[ -d /sys/firmware/efi ]] || die "Not booted in UEFI mode."
-command -v dialog &>/dev/null || pacman -Sy --noconfirm dialog
+command -v dialog &> /dev/null || pacman -Sy --noconfirm dialog
 [[ "$(free -m | awk '/^Mem:/{print $2}')" -lt 512 ]] && die "Not enough RAM, need 512MB+."
 
 # =============================================================================
@@ -61,8 +61,8 @@ while IFS= read -r line; do
   DISK_ENTRIES+=("/dev/$name" "$size  $model")
 done < <(lsblk -d -o NAME,SIZE,MODEL | grep -v 'NAME\|loop')
 
-DISK=$(dialog --stdout --menu "Select target disk" 22 72 6 "${DISK_ENTRIES[@]}") ||
-  die "No disk selected."
+DISK=$(dialog --stdout --menu "Select target disk" 22 72 6 "${DISK_ENTRIES[@]}") \
+  || die "No disk selected."
 
 DISK_SIZE_GB=$(lsblk -b -d -o SIZE "$DISK" | tail -1 | awk '{print int($1/1024/1024/1024)}')
 [[ "$DISK_SIZE_GB" -lt 20 ]] && die "Disk too small (${DISK_SIZE_GB}GB, need 20GB+)."
@@ -82,8 +82,8 @@ CPU=$(dialog --stdout --radiolist \
   "CPU vendor\n\nAuto-detected: ${CPU_VENDOR:-unknown}" \
   22 72 2 \
   "amd" "AMD (amd-ucode)" "$AMD_DEFAULT" \
-  "intel" "Intel (intel-ucode)" "$INTEL_DEFAULT") ||
-  die "No CPU selected."
+  "intel" "Intel (intel-ucode)" "$INTEL_DEFAULT") \
+  || die "No CPU selected."
 UCODE="${CPU}-ucode"
 
 # ── username ──────────────────────────────────────────────────────────────────
@@ -113,16 +113,16 @@ for r in /usr/share/zoneinfo/*/; do
 done
 
 while true; do
-  REGION=$(dialog --stdout --menu "Select region" 22 72 10 "${REGIONS[@]}") ||
-    die "Cancelled."
+  REGION=$(dialog --stdout --menu "Select region" 22 72 10 "${REGIONS[@]}") \
+    || die "Cancelled."
 
   CITIES=()
   while IFS= read -r f; do
     CITIES+=("$(basename "$f")" "")
   done < <(find /usr/share/zoneinfo/"$REGION" -maxdepth 1 -type f | sort)
 
-  CITY=$(dialog --stdout --menu "Select city — $REGION" 22 72 10 "${CITIES[@]}") ||
-    continue # Escape → zurück zur Regionsauswahl
+  CITY=$(dialog --stdout --menu "Select city — $REGION" 22 72 10 "${CITIES[@]}") \
+    || continue # Escape → zurück zur Regionsauswahl
 
   TIMEZONE="${REGION}/${CITY}"
   break
@@ -137,8 +137,8 @@ while IFS= read -r line; do
 done < <(grep -E '^\s*#?[a-zA-Z]' /etc/locale.gen | sort -u)
 
 while true; do
-  LOCALE=$(dialog --stdout --menu "Select locale" 22 72 10 "${LOCALE_ENTRIES[@]}") ||
-    die "Cancelled."
+  LOCALE=$(dialog --stdout --menu "Select locale" 22 72 10 "${LOCALE_ENTRIES[@]}") \
+    || die "Cancelled."
   [[ -n "$LOCALE" ]] && break
 done
 
@@ -149,8 +149,8 @@ while IFS= read -r km; do
 done < <(localectl list-keymaps)
 
 while true; do
-  KEYMAP=$(dialog --stdout --menu "Select console keymap" 22 72 10 "${KEYMAP_ENTRIES[@]}") ||
-    die "Cancelled."
+  KEYMAP=$(dialog --stdout --menu "Select console keymap" 22 72 10 "${KEYMAP_ENTRIES[@]}") \
+    || die "Cancelled."
   [[ -n "$KEYMAP" ]] && break
 done
 
@@ -198,8 +198,8 @@ if dialog --yesno \
       continue
     fi
     if [[ "$SWAP_SIZE_GIB" -gt 128 ]]; then
-      dialog --yesno "Swap size is ${SWAP_SIZE_GIB} GiB — are you sure?\n\nThat seems very large." 9 50 &&
-        break || continue
+      dialog --yesno "Swap size is ${SWAP_SIZE_GIB} GiB — are you sure?\n\nThat seems very large." 9 50 \
+        && break || continue
     fi
     break
   done
@@ -217,10 +217,10 @@ fi
 ENABLE_SECUREBOOT=false
 MICROSOFT_CA=false
 
-SB_SETUP_MODE=$(cat /sys/firmware/efi/efivars/SetupMode-* 2>/dev/null |
-  xxd | awk 'END{print $NF}' || echo "unknown")
-SB_CURRENT=$(cat /sys/firmware/efi/efivars/SecureBoot-* |
-  xxd | awk 'END{print $NF}' 2>/dev/null || echo "unknown")
+SB_SETUP_MODE=$(cat /sys/firmware/efi/efivars/SetupMode-* 2> /dev/null \
+  | xxd | awk 'END{print $NF}' || echo "unknown")
+SB_CURRENT=$(cat /sys/firmware/efi/efivars/SecureBoot-* \
+  | xxd | awk 'END{print $NF}' 2> /dev/null || echo "unknown")
 
 if [[ "$SB_SETUP_MODE" == "unknown" ]]; then
   dialog --msgbox "SecureBoot not available.\nSkipping." 7 50
@@ -311,7 +311,7 @@ HAS_THUNDERBOLT=false
 if lspci | grep -qi "thunderbolt\|usb4"; then
   HAS_THUNDERBOLT=true
 fi
-if ls /sys/bus/thunderbolt/devices/ 2>/dev/null | grep -q .; then
+if ls /sys/bus/thunderbolt/devices/ 2> /dev/null | grep -q .; then
   HAS_THUNDERBOLT=true
 fi
 TB_DEFAULT=$($HAS_THUNDERBOLT && echo "ON" || echo "OFF")
@@ -485,8 +485,8 @@ if [[ -n "$PKGS_AUR" ]]; then
     "AUR Helper\n\nRequired to install your selected AUR packages after first boot.\nbase-devel will be added automatically." \
     14 72 2 \
     "paru" "Rust-based, shows PKGBUILD before install" ON \
-    "yay" "Go-based, most widely used" OFF) ||
-    die "Cancelled."
+    "yay" "Go-based, most widely used" OFF) \
+    || die "Cancelled."
 else
   AUR_HELPER=""
 fi
@@ -534,12 +534,12 @@ for group in "$PKGS_HYPRLAND" "$PKGS_AUDIO" "$PKGS_TERMINAL" "$PKGS_FILES" \
   ALL_PKGS="$ALL_PKGS $group"
 done
 case "$GPU_CHOICE" in
-amd) ALL_PKGS="$ALL_PKGS vulkan-radeon mesa" ;;
-intel) ALL_PKGS="$ALL_PKGS mesa intel-media-driver" ;;
-nvidia) ALL_PKGS="$ALL_PKGS nvidia-open-dkms nvidia-utils egl-wayland lib32-nvidia-utils" ;;
-hybrid-nvidia-intel) ALL_PKGS="$ALL_PKGS nvidia-open-dkms nvidia-utils egl-wayland lib32-nvidia-utils mesa intel-media-driver" ;;
-hybrid-nvidia-amd) ALL_PKGS="$ALL_PKGS nvidia-open-dkms nvidia-utils egl-wayland lib32-nvidia-utils vulkan-radeon mesa" ;;
-nvidia-legacy) ;;
+  amd) ALL_PKGS="$ALL_PKGS vulkan-radeon mesa" ;;
+  intel) ALL_PKGS="$ALL_PKGS mesa intel-media-driver" ;;
+  nvidia) ALL_PKGS="$ALL_PKGS nvidia-open-dkms nvidia-utils egl-wayland lib32-nvidia-utils" ;;
+  hybrid-nvidia-intel) ALL_PKGS="$ALL_PKGS nvidia-open-dkms nvidia-utils egl-wayland lib32-nvidia-utils mesa intel-media-driver" ;;
+  hybrid-nvidia-amd) ALL_PKGS="$ALL_PKGS nvidia-open-dkms nvidia-utils egl-wayland lib32-nvidia-utils vulkan-radeon mesa" ;;
+  nvidia-legacy) ;;
 esac
 
 # Broadcom WiFi (auto-detected)
@@ -569,9 +569,9 @@ mkfs.fat -F32 "$EFI_PART"
 success "EFI formatted."
 
 info "Setting up LUKS2 — enter your encryption passphrase when prompted."
-cryptsetup luksFormat --type luks2 "$LUKS_PART" </dev/tty
+cryptsetup luksFormat --type luks2 "$LUKS_PART" < /dev/tty
 info "Opening LUKS volume..."
-cryptsetup open --allow-discards --persistent "$LUKS_PART" "$LUKS_NAME" </dev/tty
+cryptsetup open --allow-discards --persistent "$LUKS_PART" "$LUKS_NAME" < /dev/tty
 success "LUKS volume opened."
 
 info "Creating Btrfs filesystem and subvolumes..."
@@ -638,11 +638,11 @@ info "Preparing locale/keymap + dracut i18n config (pre-pacstrap)..."
 [[ -n "${KEYMAP:-}" ]] || die "KEYMAP is empty"
 
 # 1) system locale + console keymap for the installed system
-cat >/mnt/etc/locale.conf <<EOF
+cat > /mnt/etc/locale.conf << EOF
 LANG=${LOCALE}
 EOF
 
-cat >/mnt/etc/vconsole.conf <<EOF
+cat > /mnt/etc/vconsole.conf << EOF
 KEYMAP=${KEYMAP}
 EOF
 
@@ -657,7 +657,7 @@ fi
 
 # 3) dracut i18n config so dracut hook during pacstrap doesn't error out
 mkdir -p /mnt/etc/dracut.conf.d
-cat >/mnt/etc/dracut.conf.d/20-i18n.conf <<EOF
+cat > /mnt/etc/dracut.conf.d/20-i18n.conf << EOF
 # Generated by installer (pre-pacstrap)
 i18n_vars="LANG LC_ALL LC_CTYPE LC_MESSAGES"
 keymap="${KEYMAP}"
@@ -676,7 +676,7 @@ else
 fi
 
 info "Generating fstab..."
-genfstab -U /mnt >>/mnt/etc/fstab
+genfstab -U /mnt >> /mnt/etc/fstab
 sed -i 's|fmask=0022,dmask=0022|fmask=0077,dmask=0077,umask=0077|' /mnt/etc/fstab
 success "pacstrap done."
 
