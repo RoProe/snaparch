@@ -31,13 +31,13 @@ jobs:
   pre-commit:
     name: pre-commit (Arch)
     runs-on: ubuntu-latest
-    container: archlinux:latest
+    container: archlinux:latest # zizmor: ignore[unpinned-images] rolling by design, pacman -Syu runs first
     timeout-minutes: 15
     steps:
       - name: Install tools
         run: |
           pacman -Syu --noconfirm --needed \
-            git shellcheck shfmt pre-commit actionlint gitleaks
+          git shellcheck shfmt pre-commit actionlint gitleaks zizmor
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

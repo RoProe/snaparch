@@ -50,6 +50,12 @@ repos:
         language: system
         files: ^\.github/workflows/.*\.ya?ml$
 
+      - id: zizmor
+        name: zizmor (workflow security)
+        entry: zizmor --offline
+        language: system
+        files: ^\.github/(workflows/.*\.ya?ml|dependabot\.ya?ml)$
+
       - id: gitleaks
         name: gitleaks (Secrets im Commit)
         entry: gitleaks git --pre-commit --staged --redact --verbose
