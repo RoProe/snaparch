@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# chroot_setup.sh runs via arch-chroot in new system and gets variables passed by arch_setup.sh
+# chroot_setup.sh runs via arch-chroot in new system and gets variables passed by install.sh
 set -euo pipefail
 
 RED='\033[0;31m'
@@ -19,41 +19,40 @@ die() {
   exit 1
 }
 
-# ── sanity check — ensure required vars were passed ───────────────────────────
+# --- sanity check - ensure required vars were passed
 : "${USERNAME:?}" "${HOSTNAME:?}" "${TIMEZONE:?}" "${LOCALE:?}" "${KEYMAP:?}"
 : "${LUKS_UUID:?}" "${GPU_CHOICE:?}" "${ALL_PKGS:?}" "${AUR_HELPER:-}" "${WEBAPPS:-}"
 : "${ENABLE_AUTOLOGIN:?}" "${ENABLE_SWAP:?}" "${ENABLE_SECUREBOOT:?}" "${MICROSOFT_CA:?}"
 : "${ENABLE_LTS:?}" "${PKGS_AUR:-}" "${DISK:?}" "${CONFIGURE_DOTFILES:?}"
 : "${LUKS_NAME:?}" "${RESUME_ARGS?}"
 
-# ── passwords ─────────────────────────────────────────────────────────────────
+# --- passwords
 echo "Set ROOT password:"
 passwd < /dev/tty
 
-# ── timezone & clock ──────────────────────────────────────────────────────────
+# --- timezone & clock
 ln -sf /usr/share/zoneinfo/"${TIMEZONE}" /etc/localtime
 hwclock --systohc
 
-# ── locale ────────────────────────────────────────────────────────────────────
-# set also before in chroot
+# --- locale
 sed -i "s/^#${LOCALE}/${LOCALE}/" /etc/locale.gen
 locale-gen
 echo "LANG=${LOCALE}" > /etc/locale.conf
 
-# ── vconsole ──────────────────────────────────────────────────────────────────
+# --- vconsole
 printf 'KEYMAP=%s\n' "$KEYMAP" > /etc/vconsole.conf
 
-# ── hostname ──────────────────────────────────────────────────────────────────
+# --- hostname
 echo "${HOSTNAME}" > /etc/hostname
 
-# ── user ──────────────────────────────────────────────────────────────────────
+# --- user
 useradd -m -G wheel "${USERNAME}"
 echo "Set password for ${USERNAME}:"
 passwd "${USERNAME}" < /dev/tty
 sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
 
-# ── autologin (optional) ──────────────────────────────────────────────────────
-if $ENABLE_AUTOLOGIN; then
+# --- autologin (optional)
+if [[ "$ENABLE_AUTOLOGIN" == true ]]; then
   info "Configuring autologin..."
   mkdir -p /etc/systemd/system/getty@tty1.service.d
   cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
@@ -63,12 +62,12 @@ ExecStart=-/sbin/agetty -a ${USERNAME} --noclear %I \$TERM
 EOF
 fi
 
-# ── install user packages ─────────────────────────────────────────────────────
+# --- install user packages
 info "Installing selected packages..."
 read -ra PKG_ARRAY <<< "$ALL_PKGS"
 pacman -S --noconfirm --needed "${PKG_ARRAY[@]}"
 
-# ── activate services ────────────────────────────────────────────
+# --- activate services
 systemctl enable --no-reload bluetooth || warn "bluetooth not available"
 systemctl enable --no-reload ufw || warn "ufw not available"
 systemctl enable --no-reload power-profiles-daemon || warn "power-profiles-daemon not available"
@@ -76,8 +75,8 @@ systemctl enable --no-reload "syncthing@${USERNAME}.service" || warn "syncthing 
 systemctl enable --no-reload NetworkManager || die "NetworkManager can't be activate"
 systemctl enable --no-reload fstrim.timer || die "fstrim.timer can't be activated"
 
-# ── hibernate config (suspend-to-disk via swapfile) ───────────────────────────
-if $ENABLE_SWAP; then
+# --- hibernate config (suspend-to-disk via swapfile)
+if [[ "$ENABLE_SWAP" == true ]]; then
   info "Configuring hibernate..."
 
   # Override systemd sleep defaults to always hibernate
@@ -115,8 +114,8 @@ EOF
   success "Hibernate configured. Use: systemctl hibernate"
 fi
 
-# ── dracut hook scripts ───────────────────────────────────────────────────────
-# depending on active pkgbase chooses correct outfile in dracut-install or file to remove in dracut.remove
+# --- dracut hook scripts
+# depending on active pkgbase chooses correct outfile in dracut-install or file to remove in dracut-remove.sh
 mkdir -p /usr/local/bin /etc/pacman.d/hooks
 
 cat > /usr/local/bin/dracut-install.sh << 'EOF'
@@ -154,7 +153,7 @@ EOF
 
 chmod +x /usr/local/bin/dracut-install.sh /usr/local/bin/dracut-remove.sh
 
-# ── pacman hooks for dracut ───────────────────────────────────────────────────
+# --- pacman hooks for dracut
 cat > /etc/pacman.d/hooks/90-dracut-install.hook << 'EOF'
 [Trigger]
 Type = Path
@@ -183,7 +182,7 @@ Exec = /usr/local/bin/dracut-remove.sh
 NeedsTargets
 EOF
 
-# ── dracut config ─────────────────────────────────────────────────────────────
+# --- dracut config
 mkdir -p /etc/dracut.conf.d
 
 cat > /etc/dracut.conf.d/cmdline.conf << EOF
@@ -196,13 +195,13 @@ hostonly="yes"
 add_dracutmodules+=" snapshot-menu "
 EOF
 
-# ── Nvidia dracut config ──────────────────────────────────────────────────────
+# --- Nvidia dracut config
 if [[ "$GPU_CHOICE" == nvidia || "$GPU_CHOICE" == hybrid-nvidia* ]]; then
   cat > /etc/dracut.conf.d/nvidia.conf << 'EOF'
 add_drivers+=" nvidia nvidia_modeset nvidia_uvm nvidia_drm "
 EOF
 
-  # Wayland requires DRM modesetting; fbdev needed for early KMS
+  # Wayland requires DRM modesetting - fbdev needed for early KMS
   sed -i 's/"$/ nvidia_drm.modeset=1 nvidia_drm.fbdev=1"/' /etc/dracut.conf.d/cmdline.conf
 
   cat > /etc/pacman.d/hooks/nvidia-dracut.hook << 'EOF'
@@ -249,7 +248,7 @@ Exec = /usr/local/bin/dracut-install.sh
 EOF
 fi
 
-# ── snapper ───────────────────────────────────────────────────────────────────
+# --- snapper
 
 mkdir -p /etc/snapper/configs
 cat > /etc/snapper/configs/root << 'EOF'
@@ -285,8 +284,8 @@ pacman -S --noconfirm snap-pac
 
 systemctl enable --no-reload snapper-timeline.timer snapper-cleanup.timer
 
-# ── Secure Boot ───────────────────────────────────────────────────────────────
-if $ENABLE_SECUREBOOT; then
+# --- Secure Boot
+if [[ "$ENABLE_SECUREBOOT" == true ]]; then
   pacman -S --noconfirm sbctl
   sbctl create-keys
 
@@ -314,7 +313,7 @@ Exec = /usr/bin/sbctl sign /boot/efi/EFI/Linux/bootx64.efi
 EOF
 
   # hook for lts
-  if $ENABLE_LTS; then
+  if [[ "$ENABLE_LTS" == true ]]; then
     cat > /etc/pacman.d/hooks/zz-sbctl-lts.hook << 'EOF'
 [Trigger]
 Type = Path
@@ -332,29 +331,29 @@ EOF
   fi
 fi
 
-# ── generate UKI (triggers dracut hook) ───────────────────────────────────────
-# This reinstalls the linux package which fires 90-dracut-install.hook,
-# which calls dracut-install.sh, which runs dracut --uefi to produce bootx64.efi
+# --- generate UKI (triggers dracut hook)
+# reinstalls the linux package which fires 90-dracut-install.hook,
+# calling dracut-install.sh, and running dracut --uefi to produce bootx64.efi
 pacman -S --noconfirm linux
 
-if $ENABLE_LTS; then
+if [[ "$ENABLE_LTS" == true ]]; then
   pacman -S --noconfirm linux-lts
 fi
 
-# Initial sign — must happen after UKI exists, before reboot
-if $ENABLE_SECUREBOOT; then
+# Initial sign - must happen after UKI exists, before reboot
+if [[ "$ENABLE_SECUREBOOT" == true ]]; then
   sbctl sign -s /boot/efi/EFI/Linux/bootx64.efi
-  if $ENABLE_LTS; then
+  if [[ "$ENABLE_LTS" == true ]]; then
     sbctl sign -s /boot/efi/EFI/Linux/bootx64-lts.efi
   fi
 fi
 
-if $ENABLE_LTS; then
+if [[ "$ENABLE_LTS" == true ]]; then
   efibootmgr --create --disk "${DISK}" --part 1 --label "Arch Linux LTS" --loader '\EFI\Linux\bootx64-lts.efi'
 fi
 efibootmgr --create --disk "${DISK}" --part 1 --label "Arch Linux" --loader '\EFI\Linux\bootx64.efi'
 
-# ── WebApps ───────────────────────────────────────────────────────────────────
+# --- WebApps
 if [[ -n "${WEBAPPS}" ]]; then
   DESKTOP_DIR="/home/${USERNAME}/.local/share/applications"
   mkdir -p "$DESKTOP_DIR"
@@ -403,9 +402,9 @@ EOF
   done
 fi
 
-# ── Post Install Script and AUR setup ───────────────────────────────────────────────────────────
+# === Post Install Script and AUR setup
 
-# --- base ---------------------------------------------------------------------------------------
+# --- base
 cat > /home/"${USERNAME}"/post-install.sh << EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -414,7 +413,7 @@ info()    { echo -e "\${CYAN}[INFO]\${NC} \$*"; }
 success() { echo -e "\${GREEN}[OK]\${NC}   \$*"; }
 EOF
 
-# --- AUR (optional) -----------------------------------------------------------------------------
+# --- AUR (optional)
 if [[ -n "${PKGS_AUR:-}" ]] && [[ -n "${AUR_HELPER:-}" ]]; then
   echo "${PKGS_AUR}" | tr ' ' '\n' | grep -v '^$' > /home/"${USERNAME}"/aur-packages.txt
   chown "${USERNAME}":"${USERNAME}" /home/"${USERNAME}"/aur-packages.txt
@@ -436,7 +435,7 @@ fi
 EOF
 fi
 
-# --- Nvidia (optional) ---------------------------------------------------------------------------
+# --- Nvidia (optional)
 if [[ "${GPU_CHOICE:-}" == nvidia* || "${GPU_CHOICE:-}" == hybrid-nvidia* ]]; then
   cat >> /home/"${USERNAME}"/post-install.sh << 'EOF'
 info "Writing Hyprland nvidia env config..."
@@ -453,9 +452,9 @@ echo "      source = ~/.config/hypr/nvidia.conf"
 EOF
 fi
 
-#TODO fetch dotfiles from repo, set up zsh with highlighting, fuzzyfind, basic rice, QOL features
+# TODO: fetch dotfiles from repo, set up zsh with highlighting, fuzzyfind, basic rice, QOL features
 
-# --- add summary and set zsh as default ----------------------------------------------------------
+# --- add summary and set zsh as default
 cat >> /home/"${USERNAME}"/post-install.sh << 'EOF'
 info "Setting zsh as default shell..."
 chsh -s /bin/zsh
@@ -470,12 +469,12 @@ echo "       sudo chmod 600 /etc/NetworkManager/system-connections/*"
 echo "       sudo systemctl restart NetworkManager"
 EOF
 
-# --- ownership and make executable ----------------------------------------------------------------
+# --- ownership and make executable
 chown "${USERNAME}:${USERNAME}" /home/"${USERNAME}"/post-install.sh
 chmod +x /home/"${USERNAME}"/post-install.sh
 success "post-install.sh written to /home/${USERNAME}/"
 
-# ──── summary ─────────────────────────────────────────────────────────────────
+# === Summary
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║  Chroot setup complete!                                  ║"
@@ -486,11 +485,11 @@ echo "║    umount -R /mnt                                        ║"
 echo "║    cryptsetup close ${LUKS_NAME}                        ║"
 echo "║    reboot                                                ║"
 echo "╠══════════════════════════════════════════════════════════╣"
-if $ENABLE_SECUREBOOT; then
+if [[ "$ENABLE_SECUREBOOT" == true ]]; then
   echo "╠══════════════════════════════════════════════════════════╣"
   echo "║  After first boot — SecureBoot:                          ║"
   echo "║    1. Enable Setup Mode in BIOS                          ║"
-  if $MICROSOFT_CA; then
+  if [[ "$MICROSOFT_CA" == true ]]; then
     echo "║    2. sbctl enroll-keys --microsoft                      ║"
   else
     echo "║    2. sbctl enroll-keys                                  ║"

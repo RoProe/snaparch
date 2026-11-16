@@ -28,7 +28,7 @@ while IFS= read -r info; do
   [ -d "$snap_subvol" ] || continue
 
   desc="$(xml_tag description "$info")"
-  [ -n "$desc" ] || desc="—"
+  [ -n "$desc" ] || desc="-"
 
   snap_date="$(xml_tag date "$info" | awk '{print $1}')"
   stype="$(xml_tag type "$info")"
@@ -98,7 +98,7 @@ apply_filter() {
 
 apply_filter
 
-# ============= First MENU =========================================
+# === First MENU
 pre_menu() {
   local timeout=5
   local start
@@ -198,7 +198,7 @@ draw_menu() {
   echo ""
 
   if ((total == 0)); then
-    echo "   (no results – ESC to clear filter)"
+    echo "   (no results - ESC to clear filter)"
     for ((i = 1; i < VISIBLE; i++)); do echo ""; done
   else
     # Viewport: keep selected centered
@@ -242,12 +242,12 @@ draw_menu() {
     echo "  ID:   ${SNAP_IDS[$real_idx]}"
     echo "  Path: @snapshots/${SNAP_IDS[$real_idx]}/snapshot"
   else
-    echo "  ID:   —"
-    echo "  Path: —"
+    echo "  ID:   -"
+    echo "  Path: -"
   fi
 }
 
-# --- Pre Menu ---
+# --- Pre Menu
 if pre_menu; then
   echo "booting normally..."
   return 0
@@ -273,7 +273,7 @@ while true; do
   if ((user_interacted == 0)); then
     echo "Auto boot in ${remaining}s..."
   elif ((filter_mode)); then
-    echo "Search mode – ESC to clear"
+    echo "Search mode - ESC to clear"
   else
     echo "Auto boot disabled. Press Enter or q for boot selection"
   fi
@@ -284,7 +284,7 @@ while true; do
     continue
   fi
 
-  # --- Filter Mode --------------------------
+  # --- Filter Mode
   if ((filter_mode)); then
     if [[ "$key" == $'\x1b' ]]; then
       filter=""
@@ -292,12 +292,12 @@ while true; do
       apply_filter
 
     elif [[ "$key" == $'\x7f' || "$key" == $'\x08' ]]; then
-      # Backspace (DEL 0x7F oder BS 0x08)
+      # Backspace (DEL 0x7F or BS 0x08)
       filter="${filter%?}"
       apply_filter
 
     elif [[ "$key" == $'\n' || "$key" == $'\r' || -z "$key" ]]; then
-      # Enter: Suchmodus verlassen, Auswahl behalten
+      # Enter: leave search and keep selection
       filter_mode=0
 
     elif [[ "$key" =~ [[:print:]] ]]; then
@@ -305,7 +305,7 @@ while true; do
       apply_filter
     fi
 
-  # --- Normal Mode --------------------------
+  # --- Normal Mode
   else
     if [[ "$key" == "/" ]]; then
       filter_mode=1

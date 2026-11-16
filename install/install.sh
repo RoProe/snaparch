@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Arch Linux installer — LUKS2 + Btrfs + Dracut UKI + systemd-boot + SecureBoot
+# Arch Linux installer — LUKS2 + Btrfs + Dracut UKI + initramfs snapshot menu + SecureBoot
 # inspired by: https://github.com/Ataraxxia/secure-arch (Btrfs adaptation with snapshots and custom snapshot menu after luks decryption and swap on LUKS partition for secure hibernate.)
 #
 # Boot flow:
@@ -16,14 +16,14 @@
 #   4. Install procedure with TUI and preconfigured settings awaiting user confirmation or change
 #   5. Post install run the post-install script for some configurations and app installs  etc.
 #
-# WHAT THIS SCRIPT DOES NOT DO:
+# WHAT NEEDS TO BE DONE MANUALLY:
 #   - SecureBoot key enrollment (requires BIOS interaction — done after first boot)
 # =============================================================================
 
 ### WIP! CAN BRICK MACHINE
 set -euo pipefail
 
-# ─── colours ──────────────────────────────────────────────────────────────────
+# --- colours
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -37,7 +37,7 @@ die() {
   exit 1
 }
 
-# ─── sanity checks ────────────────────────────────────────────────────────────
+# --- sanity checks
 # am I root, does RAM suffice, UEFI enabled?
 [[ $EUID -eq 0 ]] || die "Run as root."
 [[ -d /sys/firmware/efi ]] || die "Not booted in UEFI mode."
@@ -52,7 +52,7 @@ clear
 dialog --title "Arch Linux Installer" --msgbox \
   "LUKS2 + Btrfs + Dracut UKI + Snapshot Menu + SecureBoot\n\nBoot flow after install:\n  UEFI → UKI → LUKS passphrase\n  → snapshot menu  → boot\n\nPress OK to begin." 14 62
 
-# ── disk ──────────────────────────────────────────────────────────────────────
+# --- disk
 DISK_ENTRIES=()
 while IFS= read -r line; do
   name=$(echo "$line" | awk '{print $1}')
@@ -67,7 +67,7 @@ DISK=$(dialog --stdout --menu "Select target disk" 22 72 6 "${DISK_ENTRIES[@]}")
 DISK_SIZE_GB=$(lsblk -b -d -o SIZE "$DISK" | tail -1 | awk '{print int($1/1024/1024/1024)}')
 [[ "$DISK_SIZE_GB" -lt 20 ]] && die "Disk too small (${DISK_SIZE_GB}GB, need 20GB+)."
 
-# ── CPU auto-detect ───────────────────────────────────────────────────────────
+# --- CPU auto-detect
 CPU_VENDOR=$(grep -m1 "vendor_id" /proc/cpuinfo | awk '{print $3}')
 if [[ "$CPU_VENDOR" == "GenuineIntel" ]]; then
   CPU_DEFAULT="intel"
@@ -77,7 +77,7 @@ fi
 AMD_DEFAULT=$([[ "$CPU_DEFAULT" == "amd" ]] && echo "ON" || echo "OFF")
 INTEL_DEFAULT=$([[ "$CPU_DEFAULT" == "intel" ]] && echo "ON" || echo "OFF")
 
-# ── CPU ───────────────────────────────────────────────────────────────────────
+# --- CPU
 CPU=$(dialog --stdout --radiolist \
   "CPU vendor\n\nAuto-detected: ${CPU_VENDOR:-unknown}" \
   22 72 2 \
@@ -86,7 +86,7 @@ CPU=$(dialog --stdout --radiolist \
   || die "No CPU selected."
 UCODE="${CPU}-ucode"
 
-# ── username ──────────────────────────────────────────────────────────────────
+# --- username
 while true; do
   USERNAME=$(dialog --stdout --inputbox \
     "Enter username\n\nRules:\n- lowercase letters, numbers, _ and - only\n- must start with a letter or _\n- max 32 characters\n\nExamples: john, my_user, dev-box" \
@@ -95,7 +95,7 @@ while true; do
   dialog --msgbox "Invalid username: '${USERNAME}'\n\nPlease try again." 8 45
 done
 
-# ── hostname ──────────────────────────────────────────────────────────────────
+# --- hostname
 while true; do
   HOSTNAME=$(dialog --stdout --inputbox \
     "Enter hostname\n\nRules:\n- letters and numbers only\n- hyphens allowed but not at start/end\n- max 63 characters\n\nExamples: archbox, my-laptop, dev-01" \
@@ -104,7 +104,7 @@ while true; do
   dialog --msgbox "Invalid hostname: '${HOSTNAME}'\n\nPlease try again." 8 45
 done
 
-# ── timezone ──────────────────────────────────────────────────────────────────
+# --- timezone
 REGIONS=()
 for r in /usr/share/zoneinfo/*/; do
   region=$(basename "$r")
@@ -122,13 +122,13 @@ while true; do
   done < <(find /usr/share/zoneinfo/"$REGION" -maxdepth 1 -type f | sort)
 
   CITY=$(dialog --stdout --menu "Select city — $REGION" 22 72 10 "${CITIES[@]}") \
-    || continue # Escape → zurück zur Regionsauswahl
+    || continue # Escape → back to region select
 
   TIMEZONE="${REGION}/${CITY}"
   break
 done
 
-# ── locale ────────────────────────────────────────────────────────────────────
+# --- locale
 LOCALE_ENTRIES=()
 while IFS= read -r line; do
   # parse /etc/locale.gen - rows starting with # and including spaces
@@ -142,7 +142,7 @@ while true; do
   [[ -n "$LOCALE" ]] && break
 done
 
-# ── keymap ────────────────────────────────────────────────────────────────────
+# --- keymap
 KEYMAP_ENTRIES=()
 while IFS= read -r km; do
   [[ -n "$km" ]] && KEYMAP_ENTRIES+=("$km" "")
@@ -154,7 +154,7 @@ while true; do
   [[ -n "$KEYMAP" ]] && break
 done
 
-# ── EFI size ──────────────────────────────────────────────────────────────────
+# --- EFI size
 while true; do
   EFI_SIZE=$(dialog --stdout --inputbox "EFI partition size. 2048MiB recommended if using multiple kernels." 8 50 "${EFI_SIZE:-2048MiB}") || die "Cancelled."
   if [[ ! "$EFI_SIZE" =~ ^[0-9]+(MiB|GiB)$ ]]; then
@@ -170,13 +170,13 @@ while true; do
   break
 done
 
-# ── Fallback Kernel ───────────────────────────────────────────────────────────
+# --- Fallback Kernel
 ENABLE_LTS=false
-if dialog --yesno "Install LTS Fallback-Kernel?\n\n usefull if main kernel breaks" 10 58; then
+if dialog --yesno "Install LTS Fallback-Kernel?\n\n useful if main kernel breaks" 10 58; then
   ENABLE_LTS=true
 fi
 
-# ── swap / hibernate ──────────────────────────────────────────────────────────
+# --- swap / hibernate
 ENABLE_SWAP=false
 SWAP_SIZE_GIB=0
 RAM_GIB=$((($(awk '/MemTotal/ {print $2}' /proc/meminfo) + 1024 * 1024 - 1) / (1024 * 1024)))
@@ -193,7 +193,7 @@ if dialog --yesno \
       "Swapfile size in GiB\n(Recommended: ${RAM_GIB} GiB, max: ${MAX_SWAP_GIB} GiB)" \
       10 50 "$RAM_GIB") || die "Cancelled."
 
-    # --- hard checks: invalid input, ask again ---
+    # --- hard checks: invalid input, ask again
     if [[ ! "$SWAP_SIZE_GIB" =~ ^[0-9]+$ ]]; then
       dialog --msgbox "Enter a plain number, e.g. 16" 7 40
       continue
@@ -224,7 +224,7 @@ if dialog --yesno \
   done
 fi
 
-# ── autologin ─────────────────────────────────────────────────────────────────
+# --- autologin
 ENABLE_AUTOLOGIN=false
 if dialog --yesno \
   "Enable autologin for ${USERNAME}?\n\nLogs in automatically to tty1 on boot.\nThe disk is still LUKS-encrypted — autologin\nonly skips the user password after LUKS unlock.\n\nRecommended: yes for desktop, optional for laptop." \
@@ -232,7 +232,7 @@ if dialog --yesno \
   ENABLE_AUTOLOGIN=true
 fi
 
-# ── SecureBoot ────────────────────────────────────────────────────────────────
+# --- SecureBoot
 ENABLE_SECUREBOOT=false
 MICROSOFT_CA=false
 
@@ -262,22 +262,29 @@ REQUIREMENTS:\n\
   fi
 fi
 
-# ── GPU auto-detection ────────────────────────────────────────────────────────
-GPU_INFO=$(lspci | grep -E "VGA|3D|Display" || echo "")
-GPU_PCI_ID=$(lspci -nn | grep -E "VGA|3D|Display" | grep -i nvidia | grep -oP '\[10de:\K[0-9a-f]+' | head -1 || echo "")
-HAS_NVIDIA=$(echo "$GPU_INFO" | grep -qi "nvidia" && echo true || echo false)
-HAS_AMD=$(echo "$GPU_INFO" | grep -qi "amd\|radeon\|advanced micro" && echo true || echo false)
-HAS_INTEL=$(echo "$GPU_INFO" | grep -qi "intel" && echo true || echo false)
+# --- GPU auto-detection
+GPU_INFO=$(lspci | grep -E "VGA|3D|Display" || true)
+GPU_PCI_ID=$(lspci -nn | grep -E "VGA|3D|Display" | grep -i nvidia | grep -oP '\[10de:\K[0-9a-f]+' | head -1 || true)
+HAS_NVIDIA=false
+HAS_AMD=false
+HAS_INTEL=false
+grep -qi "nvidia" <<< "$GPU_INFO" && HAS_NVIDIA=true
+grep -qi "amd\|radeon\|advanced micro" <<< "$GPU_INFO" && HAS_AMD=true
+grep -qi "intel" <<< "$GPU_INFO" && HAS_INTEL=true
 
-if $HAS_NVIDIA && $HAS_INTEL; then
+if [[ "$HAS_NVIDIA" == true && "$HAS_INTEL" == true ]]; then
   GPU_DEFAULT="hybrid-nvidia-intel"
-elif $HAS_NVIDIA && $HAS_AMD; then
+elif [[ "$HAS_NVIDIA" == true && "$HAS_AMD" == true ]]; then
   GPU_DEFAULT="hybrid-nvidia-amd"
-elif $HAS_NVIDIA; then
-  [[ -n "$GPU_PCI_ID" && $((16#${GPU_PCI_ID})) -lt $((16#1e04)) ]] && GPU_DEFAULT="nvidia-legacy" || GPU_DEFAULT="nvidia"
-elif $HAS_AMD; then
+elif [[ "$HAS_NVIDIA" == true ]]; then
+  GPU_DEFAULT="nvidia"
+  # PCI IDs below 0x1e00 are pre-Turing (so no open kernel module support)
+  if [[ -n "$GPU_PCI_ID" ]] && ((16#$GPU_PCI_ID < 16#1e00)); then
+    GPU_DEFAULT="nvidia-legacy"
+  fi
+elif [[ "$HAS_AMD" == true ]]; then
   GPU_DEFAULT="amd"
-elif $HAS_INTEL; then
+elif [[ "$HAS_INTEL" == true ]]; then
   GPU_DEFAULT="intel"
 else
   GPU_DEFAULT="none"
@@ -314,7 +321,7 @@ Hyprland env vars (set in dotfiles):\n\
     18 65
 fi
 
-# ── WiFi auto-detection ───────────────────────────────────────────────────────
+# --- WiFi auto-detection
 WIFI_INFO=$(lspci | grep -iE "network|wireless|wifi" || echo "")
 EXTRA_WIFI_PKGS=""
 
@@ -325,7 +332,7 @@ if echo "$WIFI_INFO" | grep -qi "broadcom\|BCM"; then
   EXTRA_WIFI_PKGS="broadcom-wl-dkms"
 fi
 
-# ── Thunderbolt auto-detection ────────────────────────────────────────────────
+# --- Thunderbolt auto-detection
 HAS_THUNDERBOLT=false
 if lspci | grep -qi "thunderbolt\|usb4"; then
   HAS_THUNDERBOLT=true
@@ -336,7 +343,7 @@ fi
 TB_DEFAULT=OFF
 [[ "$HAS_THUNDERBOLT" == true ]] && TB_DEFAULT=ON
 
-# ── package selection ─────────────────────────────────────────────────────────
+# --- package selection
 PKGS_HYPRLAND=$(dialog --stdout --checklist "Hyprland / Wayland stack" 22 72 18 \
   "hyprland" "Wayland compositor" ON \
   "waybar" "Status bar" ON \
@@ -480,7 +487,7 @@ PKGS_AUR=$(dialog --stdout --checklist \
   "mullvad-vpn-bin" "Mullvad VPN client" OFF \
   "yay-debug" "yay debug symbols" OFF) || true
 
-# ── configure with predefined dotfiles? ───────────────────────────────────────
+# TODO: configure with predefined dotfiles? not used in chroot yet
 CONFIGURE_DOTFILES=false
 if dialog --yesno \
   "Configure dotfiles for ${USERNAME}? Sets up specific dotfiles in ~/dotfiles with git and stow for a predefined setup" \
@@ -490,7 +497,7 @@ fi
 
 #TODO: implement dotfiles as second repo to pull from? or leave barebones and give hint in post install?
 
-# ── nvidia legacy — if choosen add to AUR ─────────────────────────────────────
+# --- nvidia legacy - if chosen add to AUR
 if [[ "$GPU_CHOICE" == "nvidia-legacy" ]]; then
   dialog --msgbox \
     "Nvidia Legacy notice:\n\nnvidia-580xx-dkms will be added to your AUR list.\nAfter first boot run ~/post-install.sh immediately.\n\nSystem will boot with nouveau (open source) driver\nuntil the proprietary driver is installed." \
@@ -498,8 +505,8 @@ if [[ "$GPU_CHOICE" == "nvidia-legacy" ]]; then
   PKGS_AUR="$PKGS_AUR nvidia-580xx-dkms nvidia-580xx-utils nvidia-580xx-settings lib32-nvidia-580xx-utils"
 fi
 
-# ── AUR helper ────────────────────────────────────────────────────────────────
-# Only asks if AUR packages got selected..
+# --- AUR helper
+# Only asks if AUR packages are selected
 if [[ -n "$PKGS_AUR" ]]; then
   AUR_HELPER=$(dialog --stdout --radiolist \
     "AUR Helper\n\nRequired to install your selected AUR packages after first boot.\nbase-devel will be added automatically." \
@@ -511,13 +518,23 @@ else
   AUR_HELPER=""
 fi
 
-# ── summary & confirm ─────────────────────────────────────────────────────────
-SWAP_SUMMARY="$($ENABLE_SWAP && echo "${SWAP_SIZE_GIB} GiB (hibernate enabled)" || echo "disabled")"
-SB_SUMMARY="$($ENABLE_SECUREBOOT && echo "yes (Microsoft CA: $MICROSOFT_CA)" || echo "no")"
-AL_SUMMARY="$($ENABLE_AUTOLOGIN && echo "yes" || echo "no")"
+# --- summary & confirm
+SWAP_SUMMARY="disabled"
+[[ "$ENABLE_SWAP" == true ]] && SWAP_SUMMARY="${SWAP_SIZE_GIB} GiB (hibernate enabled)"
+
+SB_SUMMARY="no"
+if [[ "$ENABLE_SECUREBOOT" == true ]]; then
+  SB_SUMMARY="yes (Microsoft CA: $MICROSOFT_CA)"
+fi
+
+AL_SUMMARY="no"
+[[ "$ENABLE_AUTOLOGIN" == true ]] && AL_SUMMARY="yes"
+
+LTS_SUMMARY="no"
+[[ "$ENABLE_LTS" == true ]] && LTS_SUMMARY="yes"
 
 dialog --title "Configuration Summary" --yesno \
-  "Disk:            $DISK
+  "Disk:             $DISK
 CPU/ucode:        $UCODE
 Username:         $USERNAME
 Hostname:         $HOSTNAME
@@ -525,18 +542,18 @@ Locale:           $LOCALE
 Timezone:         $TIMEZONE
 Keymap:           $KEYMAP
 EFI size:         $EFI_SIZE
-Fallback-Kernel:  $ENABLE_LTS
+Fallback-Kernel:  $LTS_SUMMARY
 GPU:              $GPU_CHOICE
 Swap:             $SWAP_SUMMARY
 Autologin:        $AL_SUMMARY
 SecureBoot:       $SB_SUMMARY
-AurHelper:        ${AUR_HELPER:-none}
+AUR Helper:       ${AUR_HELPER:-none}
 
 WARNING: ALL DATA ON $DISK WILL BE ERASED.
 
 Proceed with installation?" 27 65 || die "Aborted by user."
 
-# ─── derived variables ────────────────────────────────────────────────────────
+# --- derived variables
 if [[ "$DISK" =~ nvme|mmcblk ]]; then
   EFI_PART="${DISK}p1"
   LUKS_PART="${DISK}p2"
@@ -565,7 +582,7 @@ esac
 # Broadcom WiFi (auto-detected)
 [[ -n "$EXTRA_WIFI_PKGS" ]] && ALL_PKGS="$ALL_PKGS $EXTRA_WIFI_PKGS"
 
-# AUR helper braucht base-devel
+# AUR helper needs base-devel
 [[ -n "$AUR_HELPER" ]] && ALL_PKGS="$ALL_PKGS base-devel"
 
 # Final deduplicate
@@ -601,7 +618,9 @@ btrfs subvolume create /mnt/@
 btrfs subvolume create /mnt/@home
 btrfs subvolume create /mnt/@snapshots
 btrfs subvolume create /mnt/@var_log
-$ENABLE_SWAP && btrfs subvolume create /mnt/@swap
+if [[ "$ENABLE_SWAP" == true ]]; then
+  btrfs subvolume create /mnt/@swap
+fi
 umount /mnt
 success "Subvolumes created."
 
@@ -612,16 +631,16 @@ mkdir -p /mnt/{home,.snapshots,var/log,boot/efi}
 mount -o "${BTRFS_OPTS},subvol=@home" "$LUKS_DEV" /mnt/home
 mount -o "${BTRFS_OPTS},subvol=@snapshots" "$LUKS_DEV" /mnt/.snapshots
 mount -o "${BTRFS_OPTS},subvol=@var_log" "$LUKS_DEV" /mnt/var/log
-if $ENABLE_SWAP; then
+if [[ "$ENABLE_SWAP" == true ]]; then
   mkdir -p /mnt/swap
   mount -o "noatime,nodatacow,nodatasum,compress=no,subvol=@swap" "$LUKS_DEV" /mnt/swap
 fi
 mount "$EFI_PART" /mnt/boot/efi
 success "Mounted."
 
-# ── swapfile ──────────────────────────────────────────────────────────────────
+# --- swapfile
 SWAP_RESUME_OFFSET=""
-if $ENABLE_SWAP; then
+if [[ "$ENABLE_SWAP" == true ]]; then
   info "Creating ${SWAP_SIZE_GIB}G swapfile..."
   touch /mnt/swap/swapfile
   chattr +C /mnt/swap/swapfile
@@ -637,7 +656,7 @@ fi
 # PHASE 3 — pacstrap
 # =============================================================================
 
-# ── pacstrap part 1 ───────────────────────────────────────────────────────────
+# --- pacstrap part 1
 
 info "Refreshing pacman keys..."
 pacman-key --init
@@ -650,7 +669,7 @@ pacstrap /mnt \
   sudo vim dracut sbsigntools iwd git efibootmgr binutils \
   networkmanager pacman btrfs-progs snapper man-db
 
-# ── set locale / keymap for target system and dracut i18n ─────────────────────
+# --- set locale / keymap for target system and dracut i18n
 
 info "Preparing locale/keymap + dracut i18n config (pre-pacstrap)..."
 
@@ -685,11 +704,10 @@ EOF
 
 success "Locale/keymap + dracut i18n prepared."
 
-# ── pacstrap part 2 (Kernel)────────────────────────────────────────────────────
+# --- pacstrap part 2 (Kernel)
 
 info "Running pacstrap (kernel)..."
-# systemd-boot is part of systemd — already in base, bootctl is the installer tool
-if $ENABLE_LTS; then
+if [[ "$ENABLE_LTS" == true ]]; then
   pacstrap /mnt linux linux-lts
 else
   pacstrap /mnt linux
@@ -702,17 +720,14 @@ success "pacstrap done."
 
 LUKS_UUID=$(blkid -s UUID -o value "$LUKS_PART")
 
-if $ENABLE_SWAP; then
+if [[ "$ENABLE_SWAP" == true ]]; then
   RESUME_ARGS=" resume=/dev/mapper/cryptroot resume_offset=${SWAP_RESUME_OFFSET}"
 else
   RESUME_ARGS=""
 fi
 
-if $ENABLE_SECUREBOOT; then
-  ENROLL_CMD="sbctl enroll-keys$($MICROSOFT_CA && echo ' --microsoft' || echo '')"
-else
-  ENROLL_CMD=""
-fi
+ENROLL_CMD="sbctl enroll-keys"
+[[ "$MICROSOFT_CA" == true ]] && ENROLL_CMD+=" --microsoft"
 
 # =============================================================================
 # PHASE 4 — copy chroot script and dracut module for snapshots to target
@@ -761,8 +776,6 @@ arch-chroot /mnt env \
   CONFIGURE_DOTFILES="$CONFIGURE_DOTFILES" \
   bash /root/chroot_setup.sh
 
-#TODO:add dotfiles variable?
-
 echo ""
 success "All done!"
 rm -f /mnt/root/chroot_setup.sh
@@ -770,7 +783,7 @@ echo ""
 echo "  umount -R /mnt"
 echo "  cryptsetup close ${LUKS_NAME}"
 echo "  reboot"
-if $ENABLE_SECUREBOOT; then
+if [[ "$ENABLE_SECUREBOOT" == true ]]; then
   echo ""
   warn "After first boot: enable Setup Mode in BIOS, then run: ${ENROLL_CMD}"
 fi
