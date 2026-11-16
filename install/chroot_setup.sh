@@ -80,13 +80,11 @@ systemctl enable --no-reload fstrim.timer || die "fstrim.timer can't be activate
 if $ENABLE_SWAP; then
   info "Configuring hibernate..."
 
-  # Override systemd sleep defaults to always hibernate, never suspend-to-RAM.
-  # This means closing the lid or running 'systemctl hibernate' writes RAM to
-  # the encrypted swapfile and powers off. On next boot LUKS is unlocked first,
-  # then the kernel reads the hibernate image from the swapfile.
-  #TODO: check whether this has an impact on life expectancy of SSD since often writes
-  #TODO: maybe also possibility for suspend to RAM?
-  mkdir -p /etc/systemd/sleep.conf.d
+  # Override systemd sleep defaults to always hibernate
+  # on closing the lid or running 'systemctl hibernate' writes RAM to the encrypted swapfile and powers off.
+  # Reason: Luks-Key is kept in RAM if we use Suspend-to-RAM. We don't want that.
+  # TODO: offer suspend-then-hibernate as installer option (SLEEP_MODE)
+  mkdir -p /etc/systemd/sleep.conf.d /etc/systemd/logind.conf.d
   cat > /etc/systemd/sleep.conf.d/hibernate.conf << 'EOF'
 [Sleep]
 AllowSuspend=no
@@ -94,6 +92,13 @@ AllowHibernation=yes
 AllowHybridSleep=no
 AllowSuspendThenHibernate=no
 HibernateMode=shutdown
+EOF
+
+  # hibernate on lid close
+  cat > /etc/systemd/logind.conf.d/lid.conf << 'EOF'
+[Login]
+HandleLidSwitch=hibernate
+HandleLidSwitchExternalPower=hibernate
 EOF
 
   # Allow wheel users to hibernate without sudo password via polkit
