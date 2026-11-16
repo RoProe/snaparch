@@ -180,6 +180,9 @@ fi
 ENABLE_SWAP=false
 SWAP_SIZE_GIB=0
 RAM_GIB=$((($(awk '/MemTotal/ {print $2}' /proc/meminfo) + 1024 * 1024 - 1) / (1024 * 1024)))
+# space that must remain for the system after the swapfile
+MIN_SYSTEM_GIB=20
+MAX_SWAP_GIB=$((DISK_SIZE_GB - MIN_SYSTEM_GIB))
 
 if dialog --yesno \
   "Enable swap file + hibernate?\n\nDetected RAM: ${RAM_GIB} GiB\nRecommended swap: ${RAM_GIB} GiB\n\nThe swapfile lives inside LUKS (fully encrypted).\nHibernate state is read after LUKS unlock at boot.\nsystemd will hibernate instead of suspend-to-RAM." \
@@ -187,20 +190,36 @@ if dialog --yesno \
   ENABLE_SWAP=true
   while true; do
     SWAP_SIZE_GIB=$(dialog --stdout --inputbox \
-      "Swapfile size in GiB\n(Recommended: ${RAM_GIB} GiB to match your RAM)" \
+      "Swapfile size in GiB\n(Recommended: ${RAM_GIB} GiB, max: ${MAX_SWAP_GIB} GiB)" \
       10 50 "$RAM_GIB") || die "Cancelled."
+
+    # --- hard checks: invalid input, ask again ---
     if [[ ! "$SWAP_SIZE_GIB" =~ ^[0-9]+$ ]]; then
       dialog --msgbox "Enter a plain number, e.g. 16" 7 40
       continue
     fi
-    if [[ "$SWAP_SIZE_GIB" -lt 1 ]]; then
+    # force base 10
+    SWAP_SIZE_GIB=$((10#$SWAP_SIZE_GIB))
+
+    if ((SWAP_SIZE_GIB < 1)); then
       dialog --msgbox "Minimum swap size is 1 GiB." 7 40
       continue
     fi
-    if [[ "$SWAP_SIZE_GIB" -gt 128 ]]; then
-      dialog --yesno "Swap size is ${SWAP_SIZE_GIB} GiB — are you sure?\n\nThat seems very large." 9 50 \
-        && break || continue
+    if ((SWAP_SIZE_GIB > MAX_SWAP_GIB)); then
+      dialog --msgbox "Swap too large for this disk.\n\nMaximum: ${MAX_SWAP_GIB} GiB" 8 50
+      continue
     fi
+
+    # --- soft checks if user insists
+    if ((SWAP_SIZE_GIB < RAM_GIB)); then
+      dialog --yesno "Swap is smaller than RAM (${RAM_GIB} GiB).\n\nHibernate may fail. Continue anyway?" 9 50 \
+        || continue
+    fi
+    if ((SWAP_SIZE_GIB > 2 * RAM_GIB)); then
+      dialog --yesno "Swap is more than twice your RAM.\n\nThat is rarely useful. Continue anyway?" 9 50 \
+        || continue
+    fi
+
     break
   done
 fi
@@ -311,10 +330,11 @@ HAS_THUNDERBOLT=false
 if lspci | grep -qi "thunderbolt\|usb4"; then
   HAS_THUNDERBOLT=true
 fi
-if ls /sys/bus/thunderbolt/devices/ 2> /dev/null | grep -q .; then
+if compgen -G '/sys/bus/thunderbolt/devices/*' > /dev/null; then
   HAS_THUNDERBOLT=true
 fi
-TB_DEFAULT=$($HAS_THUNDERBOLT && echo "ON" || echo "OFF")
+TB_DEFAULT=OFF
+[[ "$HAS_THUNDERBOLT" == true ]] && TB_DEFAULT=ON
 
 # ── package selection ─────────────────────────────────────────────────────────
 PKGS_HYPRLAND=$(dialog --stdout --checklist "Hyprland / Wayland stack" 22 72 18 \

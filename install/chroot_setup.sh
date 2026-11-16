@@ -24,6 +24,7 @@ die() {
 : "${LUKS_UUID:?}" "${GPU_CHOICE:?}" "${ALL_PKGS:?}" "${AUR_HELPER:-}" "${WEBAPPS:-}"
 : "${ENABLE_AUTOLOGIN:?}" "${ENABLE_SWAP:?}" "${ENABLE_SECUREBOOT:?}" "${MICROSOFT_CA:?}"
 : "${ENABLE_LTS:?}" "${PKGS_AUR:-}" "${DISK:?}" "${CONFIGURE_DOTFILES:?}"
+: "${LUKS_NAME:?}" "${RESUME_ARGS?}"
 
 # ── passwords ─────────────────────────────────────────────────────────────────
 echo "Set ROOT password:"
@@ -40,7 +41,7 @@ locale-gen
 echo "LANG=${LOCALE}" > /etc/locale.conf
 
 # ── vconsole ──────────────────────────────────────────────────────────────────
-printf "KEYMAP=${KEYMAP}\n" > /etc/vconsole.conf
+printf 'KEYMAP=%s\n' "$KEYMAP" > /etc/vconsole.conf
 
 # ── hostname ──────────────────────────────────────────────────────────────────
 echo "${HOSTNAME}" > /etc/hostname
@@ -71,7 +72,7 @@ pacman -S --noconfirm --needed "${PKG_ARRAY[@]}"
 systemctl enable --no-reload bluetooth || warn "bluetooth not available"
 systemctl enable --no-reload ufw || warn "ufw not available"
 systemctl enable --no-reload power-profiles-daemon || warn "power-profiles-daemon not available"
-systemctl enable --no-reload syncthing@${USERNAME}.service || warn "syncthing not available"
+systemctl enable --no-reload "syncthing@${USERNAME}.service" || warn "syncthing not available"
 systemctl enable --no-reload NetworkManager || die "NetworkManager can't be activate"
 systemctl enable --no-reload fstrim.timer || die "fstrim.timer can't be activated"
 

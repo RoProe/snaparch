@@ -101,7 +101,8 @@ apply_filter
 # ============= First MENU =========================================
 pre_menu() {
   local timeout=5
-  local start=$(date +%s)
+  local start
+  start=$(date +%s)
 
   local options=("normal (b)oot" "(s)napshot menu")
   local selected=0
@@ -122,7 +123,8 @@ pre_menu() {
     echo "└──────────────────────────────────────────────┘"
     echo ""
 
-    local now=$(date +%s)
+    local now
+    now=$(date +%s)
     local remaining=$((timeout - (now - start)))
 
     if ((remaining <= 0)); then

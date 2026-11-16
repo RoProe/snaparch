@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 check() { return 0; }
 depends() { echo "btrfs"; }
+# moddir is provided by dracut when sourcing this module
+# shellcheck disable=SC2154
 install() {
   inst_hook pre-mount 05 "$moddir/snapshot-menu.sh"
   inst_script "$moddir/snapshot-rewrite.sh" /usr/bin/snapshot-rewrite
