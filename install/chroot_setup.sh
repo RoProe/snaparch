@@ -20,7 +20,7 @@ die() {
 }
 
 # --- sanity check - ensure required vars were passed
-: "${USERNAME:?}" "${HOSTNAME:?}" "${TIMEZONE:?}" "${LOCALE:?}" "${KEYMAP:?}"
+: "${USERNAME:?}" "${TARGET_HOSTNAME:?}" "${TIMEZONE:?}" "${LOCALE:?}" "${KEYMAP:?}"
 : "${LUKS_UUID:?}" "${GPU_CHOICE:?}" "${ALL_PKGS:?}" "${AUR_HELPER:-}" "${WEBAPPS:-}"
 : "${ENABLE_AUTOLOGIN:?}" "${ENABLE_SWAP:?}" "${ENABLE_SECUREBOOT:?}" "${MICROSOFT_CA:?}"
 : "${ENABLE_LTS:?}" "${PKGS_AUR:-}" "${DISK:?}" "${CONFIGURE_DOTFILES:?}"
@@ -52,7 +52,7 @@ echo "LANG=${LOCALE}" > /etc/locale.conf
 printf 'KEYMAP=%s\n' "$KEYMAP" > /etc/vconsole.conf
 
 # --- hostname
-echo "${HOSTNAME}" > /etc/hostname
+echo "${TARGET_HOSTNAME}" > /etc/hostname
 
 # --- user
 useradd -m -G wheel "${USERNAME}"

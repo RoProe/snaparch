@@ -97,11 +97,11 @@ done
 
 # --- hostname
 while true; do
-  HOSTNAME=$(dialog --stdout --inputbox \
+  TARGET_HOSTNAME=$(dialog --stdout --inputbox \
     "Enter hostname\n\nRules:\n- letters and numbers only\n- hyphens allowed but not at start/end\n- max 63 characters\n\nExamples: archbox, my-laptop, dev-01" \
-    14 50 "${HOSTNAME:-}") || die "Cancelled."
-  [[ "$HOSTNAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] && break
-  dialog --msgbox "Invalid hostname: '${HOSTNAME}'\n\nPlease try again." 8 45
+    14 50 "${TARGET_HOSTNAME:-}") || die "Cancelled."
+  [[ "$TARGET_HOSTNAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] && break
+  dialog --msgbox "Invalid hostname: '${TARGET_HOSTNAME}'\n\nPlease try again." 8 45
 done
 
 # --- timezone
@@ -183,7 +183,7 @@ RAM_GIB=$((($(awk '/MemTotal/ {print $2}' /proc/meminfo) + 1024 * 1024 - 1) / (1
 # space that must remain for the system after the swapfile
 MIN_SYSTEM_GIB=20
 MAX_SWAP_GIB=$((DISK_SIZE_GB - MIN_SYSTEM_GIB))
-
+# TODO: maybe hibernate separately?
 if dialog --yesno \
   "Enable swap file + hibernate?\n\nDetected RAM: ${RAM_GIB} GiB\nRecommended swap: ${RAM_GIB} GiB\n\nThe swapfile lives inside LUKS (fully encrypted).\nHibernate state is read after LUKS unlock at boot.\nsystemd will hibernate instead of suspend-to-RAM." \
   14 58; then
@@ -410,8 +410,7 @@ PKGS_EDITOR=$(dialog --stdout --checklist "Editors and Dev tools" 22 72 10 \
   "tree" "Directory tree" ON \
   "bind" "DNS utils" ON \
   "net-tools" "Network tools (ifconfig etc)" ON \
-  "tldr" "Simplified man pages" ON \
-  "tmux" "Terminal Multiplexer" ON) || true
+  "tldr" "Simplified man pages" ON) || true
 
 PKGS_APPS=$(dialog --stdout --checklist "Applications" 22 72 16 \
   "mpv" "Media player" ON \
@@ -462,9 +461,9 @@ PKGS_NETWORK=$(dialog --stdout --checklist "Networking tools" 22 72 8 \
   "mtr" "Traceroute + ping combined" ON \
   "whois" "Domain lookup" ON \
   "tcpdump" "Packet analyzer" ON \
-  "iperf3" "Bandwidth tester" OFF \
+  "iperf3" "Bandwidth tester" ON \
   "ipcalc" "Subnet calculator" ON \
-  "gnu-netcat" "Netcat (alternative to openbsd-nc)" OFF \
+  "gnu-netcat" "Netcat" ON \
   "wireshark-cli" "Packet analyzer GUI/CLI" OFF) || true
 
 PKGS_FONTS=$(dialog --stdout --checklist "Fonts" 22 72 7 \
@@ -483,10 +482,11 @@ PKGS_SPELL=$(dialog --stdout --checklist "Spell checking" 22 72 2 \
 PKGS_AUR=$(dialog --stdout --checklist \
   "AUR packages (installed after first boot via yay)" 22 72 4 \
   "deezer-enhanced-bin" "Deezer music client (enhanced)" OFF \
-  "typora" "Markdown editor" ON \
+  "typora" "Markdown editor" OFF \
   "mullvad-vpn-bin" "Mullvad VPN client" OFF \
   "yay-debug" "yay debug symbols" OFF) || true
 
+# --- use opinionated dotfiles setup
 # TODO: configure with predefined dotfiles? not used in chroot yet
 CONFIGURE_DOTFILES=false
 if dialog --yesno \
@@ -494,8 +494,6 @@ if dialog --yesno \
   12 58; then
   CONFIGURE_DOTFILES=true
 fi
-
-#TODO: implement dotfiles as second repo to pull from? or leave barebones and give hint in post install?
 
 # --- nvidia legacy - if chosen add to AUR
 if [[ "$GPU_CHOICE" == "nvidia-legacy" ]]; then
@@ -537,7 +535,7 @@ dialog --title "Configuration Summary" --yesno \
   "Disk:             $DISK
 CPU/ucode:        $UCODE
 Username:         $USERNAME
-Hostname:         $HOSTNAME
+Hostname:         $TARGET_HOSTNAME
 Locale:           $LOCALE
 Timezone:         $TIMEZONE
 Keymap:           $KEYMAP
@@ -758,7 +756,7 @@ echo ""
 ### all variables to chroot
 arch-chroot /mnt env \
   USERNAME="$USERNAME" \
-  HOSTNAME="$HOSTNAME" \
+  TARGET_HOSTNAME="$TARGET_HOSTNAME" \
   TIMEZONE="$TIMEZONE" \
   LOCALE="$LOCALE" \
   KEYMAP="$KEYMAP" \
