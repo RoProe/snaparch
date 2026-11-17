@@ -463,7 +463,6 @@ PKGS_NETWORK=$(dialog --stdout --checklist "Networking tools" 22 72 8 \
   "tcpdump" "Packet analyzer" ON \
   "iperf3" "Bandwidth tester" ON \
   "ipcalc" "Subnet calculator" ON \
-  "gnu-netcat" "Netcat" ON \
   "wireshark-cli" "Packet analyzer GUI/CLI" OFF) || true
 
 PKGS_FONTS=$(dialog --stdout --checklist "Fonts" 22 72 7 \
