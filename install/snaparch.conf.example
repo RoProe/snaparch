@@ -1,79 +1,126 @@
 # shellcheck disable=SC2034
-# snaparch.conf.example: copy, edit, run: install.sh --config <file>
+# =======================================================================
+# snaparch.conf.example: template and reference for an installer config
+#
+# Usage (once --config exists):
+#   cp install/snaparch.conf.example my.conf   # edit my.conf
+#   bash install/install.sh --config my.conf
+#
+# The file is SOURCED by bash, i.e. executed as code:
+#   - plain assignments only: KEY="value", no spaces around "="
+#   - no commands, no $(...), no logic
+#   - booleans: true | false (unquoted)
+# Empty values ("") marked REQUIRED have no safe default and must be set.
+# ========================================================================
 
-# --- target disk e.g. /dev/nvme0n1
+# --- disk
+# REQUIRED. Whole disk, ALL DATA ON IT WILL BE ERASED. Min. 20 GB.
+# List candidates with: lsblk -d -o NAME,SIZE,MODEL
+# e.g. /dev/nvme0n1, /dev/sda, /dev/vda (VM)
 DISK=""
 
-# --- CPU vendor: amd | intel
+# --- CPU
+# REQUIRED. amd | intel  (selects amd-ucode / intel-ucode)
 CPU=""
 
-# --- username
-USERNAME="testuser"
+# --- user
+# REQUIRED. lowercase letters, digits, _ and -; starts with a letter or _;
+# max 32 chars. e.g. john, my_user
+USERNAME=""
 
 # --- hostname
-TARGET_HOSTNAME="snaparch"
+# letters, digits and -; no - at start/end; max 63 chars. e.g. archbox, dev-01
+TARGET_HOSTNAME="archbox"
 
-# --- timezone
+# --- localisation
+# timezone: path below /usr/share/zoneinfo (list: timedatectl list-timezones)
 TIMEZONE="Europe/Berlin"
-
-# --- locale
+# locale: must exist in /etc/locale.gen, e.g. en_US.UTF-8, de_DE.UTF-8
 LOCALE="en_US.UTF-8"
-
-# --- keymap
+# console keymap (list: localectl list-keymaps), e.g. us, de-latin1
 KEYMAP="de-latin1"
 
-# --- EFI size
+# --- EFI partition
+# <number>MiB | <number>GiB, min. 512MiB.
+# 1024MiB for one UKI, 2048MiB+ with LTS fallback or several kernels
 EFI_SIZE="2048MiB"
 
-# --- Fallback Kernel
+# --- kernels
+# true: additionally install linux-lts as fallback UKI + boot entry
 ENABLE_LTS=true
 
 # --- swap / hibernate
-ENABLE_SWAP=true
-SWAP_SIZE_GIB=1
+# true: swapfile inside LUKS (@swap subvolume) + resume/hibernate configured
+ENABLE_SWAP=false
+# GiB, integer. Required (>= 1) if ENABLE_SWAP=true, ignored otherwise.
+# Max: disk size - 20 GiB. Hibernate needs roughly >= RAM size.
+SWAP_SIZE_GIB=0
 
 # --- autologin
-ENABLE_AUTOLOGIN=true
+# true: log in USERNAME on tty1 automatically (LUKS passphrase still required)
+ENABLE_AUTOLOGIN=false
 
-# --- SecureBoot
+# --- Secure Boot (sbctl)
+# true: create + sign keys; firmware must support Setup Mode,
+# Secure Boot must be DISABLED during install. Keys are enrolled after first boot.
 ENABLE_SECUREBOOT=false
+# true: also enroll Microsoft CA (needed for Windows dual boot / some option ROMs).
+# Only used if ENABLE_SECUREBOOT=true. WARNING: wrong choice can brick some hardware.
 MICROSOFT_CA=false
 
-# --- GPU e.g. hybrid-nvidia-intel, hybrid-nvidia-amd, nvidia, nvidia-legacy, amd, intel, none
+# --- GPU driver
+# amd                  vulkan-radeon + mesa
+# intel                mesa + intel-media-driver
+# nvidia               nvidia-open-dkms (Turing / RTX 20xx, GTX 1650 and newer)
+# hybrid-nvidia-intel  Intel iGPU + Nvidia dGPU (Turing+)
+# hybrid-nvidia-amd    AMD iGPU + Nvidia dGPU (Turing+)
+# nvidia-legacy        nvidia-580xx-dkms from AUR (Maxwell to Pascal),
+#                      requires AUR_HELPER; installed after first boot
+# none                 no driver, install manually
+# Driver packages are added automatically, do not list them in PKGS.
 GPU_CHOICE="none"
 
-# --- extra packages from official repos
+# --- packages (official repos)
+# Free list, any package from core/extra. Base system, kernel, ucode and
+# GPU driver are added automatically. Grouping below mirrors the TUI.
 PKGS=(
   # hyprland / wayland
   hyprland waybar hyprpaper hyprpicker hyprsunset nwg-displays xdg-desktop-portal-hyprland xdg-desktop-portal-gtk xdg-utils mako rofi swayidle swaylock grim slurp satty cliphist brightnessctl
   # audio
   pipewire pipewire-pulse pavucontrol alsa-utils
-  # terminal
+  # terminal and shell
   kitty zsh tmux fzf zoxide starship ripgrep fd wget jq
   # file management
   thunar-archive-plugin thunar-volman file-roller gvfs-mtp gvfs-smb tumbler ffmpegthumbnailer poppler-glib ntfs-3g usbutils imagemagick unzip unrar 7zip zip yazi
-  # editor
+  # editors and dev tools
   neovim vim git stow bat eza tree bind net-tools tldr
-  # apps
+  # applications
   mpv imv ffmpeg firefox libreoffice-fresh btop
-  # system
-  fprintd blueman power-profiles-daemon ufw seahorse syncthing rsync borg network-manager-applet networkmanager-openconnect wireguard-tools fwupd gnupg lsof smartmontools bolt
-  # network
+  # system and security (bolt: only useful with Thunderbolt / USB4)
+  fprintd blueman power-profiles-daemon ufw seahorse syncthing rsync borg network-manager-applet networkmanager-openconnect wireguard-tools fwupd gnupg lsof smartmontools
+  # networking tools
   nmap mtr whois tcpdump iperf3 ipcalc
   # fonts
   ttf-jetbrains-mono-nerd ttf-hack-nerd otf-firamono-nerd ttf-cascadia-code-nerd ttf-3270-nerd ttf-nerd-fonts-symbols-mono noto-fonts-emoji
-  # spellchecker
+  # spell checking
   hunspell-en_us hunspell-de
 )
 
-# --- AUR PKGS
+# --- AUR packages
+# Installed after first boot via post-install.sh with AUR_HELPER.
+# e.g. PKGS_AUR=(typora mullvad-vpn-bin)
 PKGS_AUR=()
 
-# --- WEBAPPS
+# --- AUR helper
+# paru | yay | "" (none). Required if PKGS_AUR is not empty or
+# GPU_CHOICE=nvidia-legacy. base-devel is added automatically.
+AUR_HELPER=""
+
+# --- web apps (firefox profile + .desktop entry)
+# any of: github zoom whatsapp notion protonmail
+# e.g. WEBAPPS=(github protonmail)
 WEBAPPS=()
 
-# --- use opinionated dotfiles setup
+# --- dotfiles
+# NOT IMPLEMENTED YET, has no effect. true | false
 CONFIGURE_DOTFILES=false
-
-# --- AUR Helper
-AUR_HELPER=""
