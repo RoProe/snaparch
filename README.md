@@ -1,4 +1,4 @@
-# arch-install
+# snaparch
 
 ## DISCLAIMER
 
@@ -9,279 +9,210 @@ Personal Arch Linux installation setup - LUKS2 full-disk encryption, Btrfs with 
 
 Inspired by [secure-arch](https://github.com/Ataraxxia/secure-arch) by Ataraxxia.
 
-The `00_manual_install.md` file documents the manual installation process in detail and serves as a reference for understanding the automated script.
-
 ---
 
 ## TL;DR
 
 ```
-bash arch_setup.sh          # TUI guides you through everything
+bash install/install.sh          # TUI guides you through everything
 # reboot
-bash ~/post-install.sh   # installs yay + AUR packages + sets zsh
-# if SecureBoot: enable Setup Mode in BIOS → sbctl enroll-keys --microsoft → reboot
+bash ~/post-install.sh   # installs AUR helper (paru/yay) + AUR packages + sets zsh
+# if SecureBoot: enable Setup Mode in BIOS → sbctl enroll-keys (--microsoft if chosen) → reboot
 ```
 
-**What you get:**
+## Boot flow
 
 ```
-UEFI → UKI (kernel + initramfs + cmdline, signed) → LUKS passphrase
-     → resume from hibernate (if image present)
-     → snapshot menu (5s timeout, only if snapshots exist)
-          [Enter/b]  →  normal boot (@)
-          [s]        →  pick a Snapper snapshot → boot into snapshot
+UEFI → UKI (kernel + initramfs + cmdline, optionally signed) → LUKS passphrase
+     → resume from hibernate (if an image is present)
+     → snapshot menu (5 s timeout, only shown if snapshots exist)
+          [Enter / b]  →  normal boot (@)
+          [s]          →  pick a Snapper snapshot (arrow keys or j/k)
 ```
 
-- Full LUKS2 disk encryption (Argon2id KDF - no GRUB compromise)
-- Btrfs with `zstd` compression + automatic pre/post snapshots on every `pacman` operation
-- Snapshot selection menu in the initramfs, after LUKS unlock, before root mount
-- Hibernate to encrypted swapfile - RAM state survives power-off, restored after next LUKS unlock
-- Optional autologin (disk still encrypted; only skips user password after LUKS)
-- Optional SecureBoot with your own keys (sbctl)
-- Auto-detected GPU driver (AMD / Intel / Nvidia / hybrid)
+## Features
 
-**What the script does NOT do:** SecureBoot key enrollment (requires BIOS interaction), restoring dotfiles, restoring NM VPN configs.
+- LUKS2 full-disk encryption (Argon2id; no GRUB, so no PBKDF2 limitation)
+- Btrfs with `zstd` compression, Snapper timeline snapshots and pre/post snapshots on every pacman transaction (`snap-pac`)
+- Snapshot menu in the initramfs, after LUKS unlock, before the root mount
+- Hibernate to an encrypted swapfile; closing the lid hibernates instead of suspending
+- UKIs built by dracut via pacman hooks, optional LTS fallback kernel
+- Optional SecureBoot with your own keys (`sbctl`)
+- GPU auto-detection (AMD / Intel / Nvidia / hybrid / Nvidia legacy)
+- Optional autologin, webapps (Firefox profiles), AUR packages after first boot
+
+**What the script does NOT do:** SecureBoot key enrollment (requires BIOS interaction), dotfiles
 
 ---
 
 ## Prerequisites
 
-- UEFI system (no legacy BIOS)
-- BIOS allows enrolling custom SecureBoot keys (if using SecureBoot)
+- UEFI system (no legacy BIOS), at least 20 GB disk and 512 MB RAM
+- For SecureBoot: firmware that supports Setup Mode / custom keys, and SecureBoot disabled during install
 - Internet on the live ISO (`iwctl` for WiFi)
 
 ---
 
-## Using the install script
+## Installation
 
 ### 1. Boot the Arch ISO and connect to the internet
 
 ```bash
-iwctl
-station wlan0 connect YOUR_SSID
-exit
-ping archlinux.org   # verify
+iwctl station wlan0 connect YOUR_SSID
+ping -c 3 archlinux.org
 ```
 
-### 2. Get the script onto the machine
+### 2. Get the repository
+
+The installer needs the whole repository (`install/files/`, the dracut module, `chroot_setup.sh`), not just one script.
 
 ```bash
-# From a USB stick
-mount /dev/sdX1 /mnt && cp /mnt/arch-setup.sh . && umount /mnt
-
-# Or via curl from a repo
-curl -fsSL https://raw.githubusercontent.com/RoProe/secure-arch-btrfs-snapper/refs/heads/main/arch_setup.sh -o arch_setup.sh
+curl -fsSL https://github.com/RoProe/snaparch/archive/refs/heads/main.tar.gz | tar xz
+cd snaparch-main/install
 ```
 
-### 3.  Verify and Run it
+### 3. Read it, then run it
 
 ```bash
-less bash.sh
-bash arch_setup.sh
+less install.sh chroot_setup.sh
+bash install.sh
 ```
 
-# You could also pipe it directly to bash but it is recommend it to verify it beforehand.
+The TUI asks for: target disk, CPU vendor (microcode), username, hostname, timezone, locale, console keymap,
+EFI size (default 2048 MiB), LTS fallback kernel, swap + hibernate, autologin, SecureBoot, GPU driver,
+package selection per category, webapps, AUR packages and AUR helper (paru or yay).
 
-The TUI prompts:
+After the summary screen you enter the LUKS passphrase and, inside the chroot, the root and user passwords.
+Everything else runs automatically.
 
-| Step | Notes |
-|------|-------|
-| Target disk | Selected from auto-detected `lsblk` list |
-| CPU vendor | AMD / Intel - determines microcode package |
-| Username + hostname | Free text |
-| Timezone | Two-step region → city selector |
-| Locale |
-| Keymap |
-| EFI size | Default 1024MiB |
-| Swap + hibernate | Detects RAM size, recommends matching swap size |
-| Autologin | Skips user password after LUKS unlock on boot |
-| SecureBoot | sbctl setup, with or without Microsoft CA |
-| GPU | Auto-detected via `lspci` - confirm or override |
-| Packages | Per-category checklists, some pre-selected, deselect freely |
-
-After confirming the summary the script is fully automated: partition → LUKS → Btrfs subvolumes → swapfile → pacstrap → chroot config → snapshot menu module → dracut UKI → systemd-boot → done.
-
-### 4. After the script finishes
+### 4. Reboot
 
 ```bash
+swapoff /mnt/swap/swapfile   # only if swap was enabled
 umount -R /mnt
 cryptsetup close cryptroot
 reboot
 ```
 
-### 5. If SecureBoot was enabled
+### 5. SecureBoot (if enabled)
 
 ```bash
-# In BIOS: enable Setup Mode, clear existing keys
-sbctl enroll-keys --microsoft   # drop --microsoft if no Windows dual-boot
-# In BIOS: enable Secure Boot (UEFI-only), set BIOS password
-sbctl status                    # verify
+# in the BIOS: enable Setup Mode / clear the existing keys
+sbctl enroll-keys              # add --microsoft only if you chose it (needed for Windows dual-boot)
+# in the BIOS: enable SecureBoot, set a BIOS password
+sbctl status
 ```
 
-### 6. Post-install
+### 6. Post-install (as your user)
 
 ```bash
 bash ~/post-install.sh
-# installs yay → AUR packages → sets zsh as default shell
 ```
 
-### 7. Restore your config
-
-```bash
-cd ~/dotfiles && stow *
-
-> **Note:** The dotfiles include a `.p10k.zsh` config. If you prefer to generate
-> your own prompt style, delete it and run `p10k configure` after the first login.
-
-# NM VPN configs from Borg backup
-sudo cp /path/to/restored/*.nmconnection /etc/NetworkManager/system-connections/
-sudo chmod 600 /etc/NetworkManager/system-connections/*
-sudo systemctl restart NetworkManager
-```
+Installs the AUR helper and the selected AUR packages, writes `~/.config/hypr/nvidia.conf` for Nvidia, and sets zsh as the login shell.
 
 ---
 
-## What the script sets up - and why
+## Design notes
 
 ### Disk layout
 
 ```
 /dev/nvme0n1
-├── p1  EFI   (FAT32, 1024MiB, unencrypted)
-└── p2  LUKS2 (Argon2id)
+├── p1  EFI    FAT32, unencrypted, holds the UKIs (EFI/Linux/bootx64.efi, bootx64-lts.efi)
+└── p2  LUKS2
          └── Btrfs
               ├── @           →  /
               ├── @home       →  /home
               ├── @snapshots  →  /.snapshots
               ├── @var_log    →  /var/log
-              └── @swap       →  /swap  (nodatacow, optional)
+              └── @swap       →  /swap   (only with swap; holds the NOCOW swapfile)
 ```
 
-**Why LUKS2 with Argon2id?** Argon2id is memory-hard - brute-forcing the passphrase requires significant RAM, making offline attacks much slower than with PBKDF2. GRUB cannot use Argon2id because it must decrypt the disk before the OS is loaded. systemd-boot avoids this entirely - it just launches the UKI, and LUKS is unlocked by the initramfs using full Argon2id.
+- `@home`: rolling back the system doesn't touch your files.
+- `@snapshots`: kept separate so snapshots don't contain themselves.
+- `@var_log`: logs survive a rollback, so you can still see why something broke.
+- `@swap`: copy-on-write must be off for the swapfile, otherwise `resume_offset` doesn't work.
 
-# TODO
-**Why Btrfs instead of ext4 + LVM?** Btrfs subvolumes replace LVM logical volumes with no added complexity. You gain CoW snapshots, `zstd` compression, and data checksums - none of which ext4 offers. Though it should be remarked that zstd brings some cpu overhead, so it isn't really recommendet on old CPUs.
+**Why no GRUB?** GRUB has to unlock LUKS itself and doesn't support Argon2id. Here the firmware starts the UKI
+and the initramfs unlocks LUKS, so the full Argon2id KDF can be used.
 
-**Why these subvolumes?**
+### Hibernate
 
-- `@home` : personal data survives system rollbacks. Rolling back a broken update won't undo your files.
-- `@snapshots` : separate so Snapper snapshots don't include themselves recursively.
-- `@var_log` : logs shouldn't roll back. You want the logs that show *why* something broke.
-- `@swap` : CoW must be disabled here. Btrfs CoW makes file offsets non-contiguous, which breaks the kernel's `resume_offset` calculation for hibernate.
+The swapfile lives inside LUKS. `AllowSuspend=no` and `HibernateMode=shutdown` make the system always hibernate
+and power off instead of suspending to RAM, because with suspend-to-RAM the LUKS key stays in memory.
+Closing the lid hibernates. A polkit rule lets members of `wheel` hibernate without a password.
 
-### Hibernate via encrypted swapfile
+### Snapshot menu
 
-The swapfile lives inside the LUKS volume - it is fully encrypted. `HibernateMode=shutdown` in `systemd-sleep.conf.d` means hibernate powers the machine fully off. On next boot: systemd-boot launches the UKI → LUKS passphrase → kernel reads hibernate image from swapfile (using `resume=` and `resume_offset=` from the kernel command line) → session restored.
+A custom dracut module (`install/dracut/99snapshot-menu`) runs as a pre-mount hook. It reads Snapper's
+`info.xml` files and shows the 20 newest snapshots. Selecting one rewrites the root mount options
+(`snapshot-rewrite.service`) so that `@snapshots/N/snapshot` is mounted instead of `@`.
 
-`AllowSuspend=no` ensures the system always hibernates, never suspends to RAM - so closing the lid or running `systemctl hibernate` always writes to disk.
+> Known limitation: Snapper snapshots are read-only, so booting into one doesn't work properly yet (see TODO.md).
+> **Snapper quirk:** When you run `snapper create-config`, Snapper creates its own `.snapshots` subvolume. Since we already have `@snapshots` mounted at `/.snapshots`, this conflicts. The script deletes Snapper's auto-created subvolume and keeps the pre-existing mount. fstab should handle it correctly after reboot.
 
-### Post-LUKS snapshot menu
+### UKIs and pacman hooks
 
-The snapshot menu is a custom dracut module bundled into the UKI. It runs in the initramfs after LUKS is unlocked but before root is mounted. It reads Snapper's `info.xml` files directly from the Btrfs volume and presents a numbered list. Selecting a snapshot mounts `@snapshots/N/snapshot` as root instead of `@`.
-
-The 5-second timeout defaults to normal boot - you only see the full list if you press `s`. On the first boot there are no snapshots yet, so the menu is skipped entirely and the system boots straight through.
-
-### systemd-boot
-
-systemd-boot is a minimal EFI boot manager - it reads the `entries/` directory and launches the matching EFI binary. `timeout 0` makes it instant and invisible. The snapshot selection happens after LUKS unlock inside the UKI, not in the bootloader. Hold `Space` at power-on to access the systemd-boot menu manually (useful for booting a USB stick without changing BIOS settings).
-
-### Snapper + snap-pac
-
-`snap-pac` hooks into pacman and creates a **pre** and **post** snapshot around every transaction automatically. No need to think about it. Every `pacman -Syu` is enclosed by snapshots, accessible from the boot menu on the next start.
-
-**Snapper quirk:** When you run `snapper create-config`, Snapper creates its own `.snapshots` subvolume. Since we already have `@snapshots` mounted at `/.snapshots`, this conflicts. The script deletes Snapper's auto-created subvolume and keeps the pre-existing mount. fstab should handle it correctly after reboot.
+`dracut-install.sh` builds one UKI per installed kernel (`linux` → `bootx64.efi`, `linux-lts` → `bootx64-lts.efi`),
+triggered by pacman hooks on kernel install/upgrade and on Nvidia driver changes.
+`dracut-remove.sh` deletes the UKI when a kernel is removed.
 
 ### GPU drivers
 
-Auto-detected via `lspci`, confirmed in the TUI:
-
-| Selection | Packages installed |
-|-----------|--------------------|
+| Choice | Packages |
+|---|---|
 | AMD | `vulkan-radeon`, `mesa` |
-| Intel | `mesa`, `intel-media-driver` |
-| Nvidia | `nvidia-dkms`, `nvidia-utils`, `egl-wayland`, `lib32-nvidia-utils` |
-| Hybrid Intel+Nvidia | All of the above for both |
-| Hybrid AMD+Nvidia | All of the above for both |
+| intel | `mesa`, `intel-media-driver` |
+| nvidia | `nvidia-open-dkms`, `nvidia-utils`, `egl-wayland`, `lib32-nvidia-utils` |
+| hybrid-nvidia-intel / -amd | Nvidia packages plus the iGPU packages |
+| nvidia-legacy | `nvidia-580xx-dkms` & co. from the AUR, installed by `post-install.sh` |
 
-For Nvidia, the script also appends `nvidia_drm.modeset=1 nvidia_drm.fbdev=1` to the kernel command line and adds the Nvidia modules to the initramfs via dracut. A separate pacman hook rebuilds the UKI whenever `nvidia-dkms` updates.
+For Nvidia the installer adds the modules to the initramfs and `nvidia_drm.modeset=1 nvidia_drm.fbdev=1`
+to the kernel command line.
 
-You still need to add Nvidia env vars to your Hyprland config manually (I'm thinking about adding it automatically with a warning that you should remember it when you add your own dotfiles...):
+### SecureBoot
 
-```bash
-# ~/.config/hypr/envs.conf
-env = LIBVA_DRIVER_NAME,nvidia
-env = __GLX_VENDOR_LIBRARY_NAME,nvidia
-env = WLR_NO_HARDWARE_CURSORS,1
-env = NVD_BACKEND,direct
-# Optimus hybrid only:
-env = AQ_DRM_DEVICES,/dev/dri/card1
-```
-
-### SecureBoot with sbctl
-
-sbctl generates Platform Key, Key Exchange Key, and Database Key. UKI is signed with the Database Key. dracut is configured to re-sign the UKI automatically on every rebuild. A pacman hook re-signs after kernel updates. Key enrollment happens after first boot via BIOS Setup Mode - the script sets everything up but cannot enroll keys without physical BIOS access.
+`sbctl` creates your own keys. dracut signs the UKI on every build with the sbctl database key.
+Keys are enrolled manually after the first boot (see Installation, step 5).
 
 ### Autologin
 
-Configured via a systemd drop-in for `getty@tty1.service`. The disk is still fully encrypted - autologin only skips the Linux user password prompt after LUKS is unlocked. Practical for a home desktop or laptop that travels seldomly. Remember that you shouldn't let root autologin.
+A systemd drop-in for `getty@tty1`. The disk stays encrypted; autologin only skips the user password after the LUKS unlock.
 
 ---
 
-## Working with snapshots
+### Restoring a snapshot
 
-```bash
-# List all snapshots
-snapper -c root list
+The kernel command line mounts `subvol=@` explicitly, so `snapper rollback` and `btrfs subvolume set-default`
+have **no effect** with this setup. To restore, replace `@` with a writable copy of the snapshot,
+e.g. from the live ISO. Rollback is planned but still WIP.
 
-# Manual snapshot before something risky
-snapper -c root create --description "before nginx config change"
+---
 
-# Undo file changes back to a snapshot (running system)
-snapper -c root undochange SNAP_NUMBER..0
+## Repository layout
 
-# Full system rollback (running system, survives reboot)
-snapper -c root rollback SNAP_NUMBER
-reboot
-
-# Emergency rollback from live ISO (system won't boot)
-cryptsetup open /dev/nvme0n1p2 cryptroot
-mount -o subvolid=5 /dev/mapper/cryptroot /mnt
-ls /mnt/@snapshots/
-btrfs subvolume set-default /mnt/@snapshots/NUMBER/snapshot /dev/mapper/cryptroot
-umount /mnt
-reboot
-# After confirming stable, make the rollback permanent:
-snapper -c root rollback
+```
+install/
+├── install.sh            # runs on the live ISO: TUI, partitioning, LUKS, Btrfs, pacstrap
+├── chroot_setup.sh       # runs inside arch-chroot: system configuration, UKI, boot entries
+├── files/                # static files, paths mirror the target system (etc/…, usr/…)
+└── dracut/99snapshot-menu/   # the initramfs snapshot menu
+ci-scripts/               # helper scripts used by pre-commit
 ```
 
-Automatic pre/post snapshots from `snap-pac` appear in the boot menu on the next startup - no manual action needed for day-to-day use.
+## Development
 
-## Short Summary of how the script works
+All checks run through [pre-commit](https://pre-commit.com/), locally and in CI (`.github/workflows/lint.yml`):
 
-arch_setup.sh (run from Arch ISO)
-├── Phase 0 — TUI: disk, CPU, user, timezone, locale, GPU, packages
-├── Phase 1 — Partition (EFI + LUKS), Btrfs subvolumes, optional swapfile
-├── Phase 2 — pacstrap base system, genfstab
-├── Phase 3 — curl chroot_setup.sh from GitHub
-└── Phase 4 — arch-chroot → chroot_setup.sh
-                ├── locale, hostname, user, passwords
-                ├── optional: autologin, hibernate, SecureBoot curl
-                ├── snapper config
-                ├── install packages
-                ├── dracut + systemd-boot → builds UKI (bootx64.efi)
-                └── curl post_install.sh → /home/user/
+```bash
+sudo pacman -S --needed pre-commit shellcheck shfmt actionlint gitleaks zizmor
+pre-commit install
+pre-commit run --all-files
+```
 
-post_install.sh (run after first boot as user)
-├── install yay
-├── install AUR packages
-└── set zsh as default shell
+Releases are built from tags (`v*.*.*`) by `.github/workflows/release.yml`.
 
-chroot_setup.sh
-    ├── locale, hostname, user, passwords
-    ├── optional: autologin, hibernate, SecureBoot
-    ├── snapper config
-    ├── install packages
-    ├── dracut config + pacman hooks
-    ├── curl dracut/99snapshot-menu/* from GitHub → /usr/lib/dracut/modules.d/
-    ├── dracut + systemd-boot → builds UKI (bootx64.efi)
-    └── curl post_install.sh from GitHub → /home/user/
+## License
+
+GPL-3.0, see [LICENSE](LICENSE).
