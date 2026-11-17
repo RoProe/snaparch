@@ -18,6 +18,7 @@ _conf_err() { CONF_ERRORS+=("$*"); }
 # load_conf <file>: source a conf file into the global scope
 load_conf() {
   [[ -f $1 && -r $1 ]] || return 1
+  unset "${CONF_KEYS[@]}"
   # shellcheck source=../snaparch.conf.example
   source "$1"
 }
@@ -89,7 +90,7 @@ validate_conf() {
     _conf_err "EFI_SIZE invalid: '$EFI_SIZE' (e.g. 2048MiB, 2GiB)"
   fi
 
-  if [[ ! $SWAP_SIZE_GIB =~ ^[0-9]+$ ]]; then
+  if [[ ! $SWAP_SIZE_GIB =~ ^[0-9]{1,6}$ ]]; then
     _conf_err "SWAP_SIZE_GIB must be a whole number (got '$SWAP_SIZE_GIB')"
   elif [[ $ENABLE_SWAP == true ]] && ((10#$SWAP_SIZE_GIB < 1)); then
     _conf_err "SWAP_SIZE_GIB must be >= 1 when ENABLE_SWAP=true"
