@@ -1,0 +1,79 @@
+# shellcheck disable=SC2034
+# snaparch.conf.example: copy, edit, run: install.sh --config <file>
+
+# --- target disk e.g. /dev/nvme0n1
+DISK=""
+
+# --- CPU vendor: amd | intel
+CPU=""
+
+# --- username
+USERNAME="testuser"
+
+# --- hostname
+TARGET_HOSTNAME="snaparch"
+
+# --- timezone
+TIMEZONE="Europe/Berlin"
+
+# --- locale
+LOCALE="en_US.UTF-8"
+
+# --- keymap
+KEYMAP="de-latin1"
+
+# --- EFI size
+EFI_SIZE="2048MiB"
+
+# --- Fallback Kernel
+ENABLE_LTS=true
+
+# --- swap / hibernate
+ENABLE_SWAP=true
+SWAP_SIZE_GIB=1
+
+# --- autologin
+ENABLE_AUTOLOGIN=true
+
+# --- SecureBoot
+ENABLE_SECUREBOOT=false
+MICROSOFT_CA=false
+
+# --- GPU e.g. hybrid-nvidia-intel, hybrid-nvidia-amd, nvidia, nvidia-legacy, amd, intel, none
+GPU_CHOICE="none"
+
+# --- extra packages from official repos
+PKGS=(
+  # hyprland / wayland
+  hyprland waybar hyprpaper hyprpicker hyprsunset nwg-displays xdg-desktop-portal-hyprland xdg-desktop-portal-gtk xdg-utils mako rofi swayidle swaylock grim slurp satty cliphist brightnessctl
+  # audio
+  pipewire pipewire-pulse pavucontrol alsa-utils
+  # terminal
+  kitty zsh tmux fzf zoxide starship ripgrep fd wget jq
+  # file management
+  thunar-archive-plugin thunar-volman file-roller gvfs-mtp gvfs-smb tumbler ffmpegthumbnailer poppler-glib ntfs-3g usbutils imagemagick unzip unrar 7zip zip yazi
+  # editor
+  neovim vim git stow bat eza tree bind net-tools tldr
+  # apps
+  mpv imv ffmpeg firefox libreoffice-fresh btop
+  # system
+  fprintd blueman power-profiles-daemon ufw seahorse syncthing rsync borg network-manager-applet networkmanager-openconnect wireguard-tools fwupd gnupg lsof smartmontools bolt
+  # network
+  nmap mtr whois tcpdump iperf3 ipcalc
+  # fonts
+  ttf-jetbrains-mono-nerd ttf-hack-nerd otf-firamono-nerd ttf-cascadia-code-nerd ttf-3270-nerd ttf-nerd-fonts-symbols-mono noto-fonts-emoji
+  # spellchecker
+  hunspell-en_us hunspell-de
+)
+
+# --- AUR PKGS
+PKGS_AUR=()
+
+# --- WEBAPPS
+WEBAPPS=()
+
+# --- use opinionated dotfiles setup
+CONFIGURE_DOTFILES=false
+
+# --- AUR Helper
+AUR_HELPER=""
