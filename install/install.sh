@@ -745,6 +745,10 @@ chmod +x /mnt/usr/lib/dracut/modules.d/99snapshot-menu/*.sh
 
 success "All scripts copied."
 
+info "Copying static files..."
+cp -r "${SCRIPT_DIR}/files" /mnt/root/snaparch-files
+success "All files copied."
+
 # =============================================================================
 # PHASE 5 — enter chroot
 # =============================================================================
@@ -777,8 +781,12 @@ arch-chroot /mnt env \
   bash /root/chroot_setup.sh
 
 echo ""
-success "All done!"
+info "Cleanup..."
 rm -f /mnt/root/chroot_setup.sh
+rm -rf /mnt/root/snaparch-files
+info "Syncing"
+sync
+success "All done!"
 echo ""
 echo "  umount -R /mnt"
 echo "  cryptsetup close ${LUKS_NAME}"

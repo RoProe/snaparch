@@ -26,6 +26,15 @@ die() {
 : "${ENABLE_LTS:?}" "${PKGS_AUR:-}" "${DISK:?}" "${CONFIGURE_DOTFILES:?}"
 : "${LUKS_NAME:?}" "${RESUME_ARGS?}"
 
+# --- Helper var for the static files
+# copies file from repo to target system
+# usage: put <mode> <path relative to />
+FILES=/root/snaparch-files
+put() {
+  (($# == 2)) || die "put: expected 2 args, got $#: $*"
+  install -Dm"$1" "${FILES}/$2" "/$2"
+}
+
 # --- passwords
 echo "Set ROOT password:"
 passwd < /dev/tty
@@ -83,104 +92,26 @@ if [[ "$ENABLE_SWAP" == true ]]; then
   # on closing the lid or running 'systemctl hibernate' writes RAM to the encrypted swapfile and powers off.
   # Reason: Luks-Key is kept in RAM if we use Suspend-to-RAM. We don't want that.
   # TODO: offer suspend-then-hibernate as installer option (SLEEP_MODE)
-  mkdir -p /etc/systemd/sleep.conf.d /etc/systemd/logind.conf.d
-  cat > /etc/systemd/sleep.conf.d/hibernate.conf << 'EOF'
-[Sleep]
-AllowSuspend=no
-AllowHibernation=yes
-AllowHybridSleep=no
-AllowSuspendThenHibernate=no
-HibernateMode=shutdown
-EOF
+  put 644 etc/systemd/sleep.conf.d/hibernate.conf
 
   # hibernate on lid close
-  cat > /etc/systemd/logind.conf.d/lid.conf << 'EOF'
-[Login]
-HandleLidSwitch=hibernate
-HandleLidSwitchExternalPower=hibernate
-EOF
+  put 644 etc/systemd/logind.conf.d/lid.conf
 
   # Allow wheel users to hibernate without sudo password via polkit
-  mkdir -p /etc/polkit-1/rules.d
-  cat > /etc/polkit-1/rules.d/10-hibernate.rules << 'EOF'
-polkit.addRule(function(action, subject) {
-    if ((action.id == "org.freedesktop.login1.hibernate" ||
-         action.id == "org.freedesktop.login1.hibernate-multiple-sessions") &&
-        subject.isInGroup("wheel")) {
-        return polkit.Result.YES;
-    }
-});
-EOF
+  put 644 etc/polkit-1/rules.d/10-hibernate.rules
   success "Hibernate configured. Use: systemctl hibernate"
 fi
 
 # --- dracut hook scripts
 # depending on active pkgbase chooses correct outfile in dracut-install or file to remove in dracut-remove.sh
-mkdir -p /usr/local/bin /etc/pacman.d/hooks
+put 755 usr/local/bin/dracut-install.sh
 
-cat > /usr/local/bin/dracut-install.sh << 'EOF'
-#!/usr/bin/env bash
-mkdir -p /boot/efi/EFI/Linux
-while read -r line; do
-    if [[ "$line" == 'usr/lib/modules/'+([^/])'/pkgbase' ]]; then
-        kver="${line#'usr/lib/modules/'}"
-        kver="${kver%'/pkgbase'}"
-        pkgbase=$(cat "/usr/lib/modules/${kver}/pkgbase")
-        if [[ "$pkgbase" == "linux-lts" ]]; then
-          dracut --force --uefi --kver "$kver" /boot/efi/EFI/Linux/bootx64-lts.efi
-        else
-          dracut --force --uefi --kver "$kver" /boot/efi/EFI/Linux/bootx64.efi
-        fi
-    fi
-done
-EOF
-
-cat > /usr/local/bin/dracut-remove.sh << 'EOF'
-#!/usr/bin/env bash
-while read -r line; do
-    if [[ "$line" == 'usr/lib/modules/'+([^/])'/pkgbase' ]]; then
-        kver="${line#'usr/lib/modules/'}"
-        kver="${kver%'/pkgbase'}"
-        pkgbase=$(cat "/usr/lib/modules/${kver}/pkgbase")
-        if [[ "$pkgbase" == "linux-lts" ]]; then
-            rm -f /boot/efi/EFI/Linux/bootx64-lts.efi
-        else
-            rm -f /boot/efi/EFI/Linux/bootx64.efi
-        fi
-    fi
-done
-EOF
-
-chmod +x /usr/local/bin/dracut-install.sh /usr/local/bin/dracut-remove.sh
+put 755 usr/local/bin/dracut-remove.sh
 
 # --- pacman hooks for dracut
-cat > /etc/pacman.d/hooks/90-dracut-install.hook << 'EOF'
-[Trigger]
-Type = Path
-Operation = Install
-Operation = Upgrade
-Target = usr/lib/modules/*/pkgbase
+put 644 etc/pacman.d/hooks/90-dracut-install.hook
 
-[Action]
-Description = Updating linux EFI image
-When = PostTransaction
-Exec = /usr/local/bin/dracut-install.sh
-Depends = dracut
-NeedsTargets
-EOF
-
-cat > /etc/pacman.d/hooks/60-dracut-remove.hook << 'EOF'
-[Trigger]
-Type = Path
-Operation = Remove
-Target = usr/lib/modules/*/pkgbase
-
-[Action]
-Description = Removing linux EFI image
-When = PreTransaction
-Exec = /usr/local/bin/dracut-remove.sh
-NeedsTargets
-EOF
+put 644 etc/pacman.d/hooks/60-dracut-remove.hook
 
 # --- dracut config
 mkdir -p /etc/dracut.conf.d
@@ -189,93 +120,23 @@ cat > /etc/dracut.conf.d/cmdline.conf << EOF
 kernel_cmdline="rd.luks.name=${LUKS_UUID}=cryptroot root=/dev/mapper/cryptroot rootfstype=btrfs rootflags=rw,noatime,compress=zstd,subvol=@${RESUME_ARGS}"
 EOF
 
-cat > /etc/dracut.conf.d/flags.conf << 'EOF'
-compress="zstd"
-hostonly="yes"
-add_dracutmodules+=" snapshot-menu "
-EOF
+put 644 etc/dracut.conf.d/flags.conf
 
-# --- Nvidia dracut config
-if [[ "$GPU_CHOICE" == nvidia || "$GPU_CHOICE" == hybrid-nvidia* ]]; then
-  cat > /etc/dracut.conf.d/nvidia.conf << 'EOF'
-add_drivers+=" nvidia nvidia_modeset nvidia_uvm nvidia_drm "
-EOF
+# --- Nvidia (open, hybrid and legacy)
+if [[ $GPU_CHOICE == nvidia* || $GPU_CHOICE == hybrid-nvidia* ]]; then
+  put 644 etc/dracut.conf.d/nvidia.conf
+  put 644 etc/modprobe.d/nvidia.conf
+  put 644 etc/pacman.d/hooks/95-nvidia-dracut.hook
 
   # Wayland requires DRM modesetting - fbdev needed for early KMS
   sed -i 's/"$/ nvidia_drm.modeset=1 nvidia_drm.fbdev=1"/' /etc/dracut.conf.d/cmdline.conf
-
-  cat > /etc/pacman.d/hooks/nvidia-dracut.hook << 'EOF'
-[Trigger]
-Type = Package
-Operation = Install
-Operation = Upgrade
-Operation = Remove
-Target = nvidia-open-dkms
-
-[Action]
-Description = Rebuilding UKI for nvidia driver update...
-When = PostTransaction
-Exec = /usr/local/bin/dracut-install.sh
-EOF
-fi
-
-if [[ "$GPU_CHOICE" == "nvidia-legacy" ]]; then
-  cat > /etc/modprobe.d/nvidia.conf << 'EOF'
-options nvidia-drm modeset=1
-options nvidia NVreg_PreserveVideoMemoryAllocations=1
-EOF
-
-  # prepare dracut cmdline
-  sed -i 's/"$/ nvidia_drm.modeset=1 nvidia_drm.fbdev=1"/' /etc/dracut.conf.d/cmdline.conf
-
-  cat > /etc/dracut.conf.d/nvidia.conf << 'EOF'
-add_drivers+=" nvidia nvidia_modeset nvidia_uvm nvidia_drm "
-EOF
-
-  # hook to rebuild UKI after AUR-install
-  cat > /etc/pacman.d/hooks/nvidia-legacy-dracut.hook << 'EOF'
-[Trigger]
-Type = Package
-Operation = Install
-Operation = Upgrade
-Operation = Remove
-Target = nvidia-580xx-dkms
-
-[Action]
-Description = Rebuilding UKI for nvidia-legacy driver update...
-When = PostTransaction
-Exec = /usr/local/bin/dracut-install.sh
-EOF
 fi
 
 # --- snapper
 
-mkdir -p /etc/snapper/configs
-cat > /etc/snapper/configs/root << 'EOF'
-SUBVOLUME="/"
-FSTYPE="btrfs"
-QGROUP=""
-SPACE_LIMIT="0.5"
-FREE_LIMIT="0.2"
-ALLOW_USERS=""
-ALLOW_GROUPS="wheel"
-SYNC_ACL="no"
-BACKGROUND_COMPARISON="yes"
-NUMBER_CLEANUP="yes"
-NUMBER_MIN_AGE="1800"
-NUMBER_LIMIT="50"
-NUMBER_LIMIT_IMPORTANT="10"
-TIMELINE_CREATE="yes"
-TIMELINE_CLEANUP="yes"
-TIMELINE_MIN_AGE="1800"
-TIMELINE_LIMIT_HOURLY="5"
-TIMELINE_LIMIT_DAILY="7"
-TIMELINE_LIMIT_WEEKLY="4"
-TIMELINE_LIMIT_MONTHLY="6"
-TIMELINE_LIMIT_YEARLY="2"
-EOF
+put 644 etc/snapper/configs/root
 
-echo 'SNAPPER_CONFIGS="root"' > /etc/conf.d/snapper
+put 644 etc/conf.d/snapper
 
 chmod 750 /.snapshots
 chown :wheel /.snapshots
@@ -289,45 +150,13 @@ if [[ "$ENABLE_SECUREBOOT" == true ]]; then
   pacman -S --noconfirm sbctl
   sbctl create-keys
 
-  cat > /etc/dracut.conf.d/secureboot.conf << 'EOF'
-uefi_secureboot_cert="/var/lib/sbctl/keys/db/db.pem"
-uefi_secureboot_key="/var/lib/sbctl/keys/db/db.key"
-EOF
+  put 644 etc/dracut.conf.d/secureboot.conf
 
-  cat > /etc/pacman.d/hooks/zz-sbctl.hook << 'EOF'
-[Trigger]
-Type = Path
-Operation = Install
-Operation = Upgrade
-Operation = Remove
-Target = boot/*
-Target = efi/*
-Target = usr/lib/modules/*/vmlinuz
-Target = usr/lib/initcpio/*
-Target = usr/lib/**/efi/*.efi*
-
-[Action]
-Description = Signing EFI binaries...
-When = PostTransaction
-Exec = /usr/bin/sbctl sign /boot/efi/EFI/Linux/bootx64.efi
-EOF
+  put 644 etc/pacman.d/hooks/zz-sbctl.hook
 
   # hook for lts
   if [[ "$ENABLE_LTS" == true ]]; then
-    cat > /etc/pacman.d/hooks/zz-sbctl-lts.hook << 'EOF'
-[Trigger]
-Type = Path
-Operation = Install
-Operation = Upgrade
-Operation = Remove
-Target = boot/*
-Target = usr/lib/modules/*/vmlinuz
-
-[Action]
-Description = Signing LTS EFI binary...
-When = PostTransaction
-Exec = /usr/bin/sbctl sign /boot/efi/EFI/Linux/bootx64-lts.efi
-EOF
+    put 644 etc/pacman.d/hooks/zz-sbctl-lts.hook
   fi
 fi
 
