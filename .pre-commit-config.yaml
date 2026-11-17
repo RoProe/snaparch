@@ -61,3 +61,10 @@ repos:
         entry: gitleaks git --pre-commit --staged --redact --verbose
         language: system
         pass_filenames: false
+
+      - id: check-put-paths
+        name: check put paths in chroot_setup.sh
+        entry: ci-scripts/check-put-paths.sh
+        language: script
+        pass_filenames: false
+        files: ^install/(chroot_setup\.sh|files/)
