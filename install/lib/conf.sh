@@ -90,7 +90,7 @@ validate_conf() {
     _conf_err "EFI_SIZE invalid: '$EFI_SIZE' (e.g. 2048MiB, 2GiB)"
   fi
 
-  if [[ ! $SWAP_SIZE_GIB =~ ^[0-9]{1,6}$ ]]; then
+  if [[ ! $SWAP_SIZE_GIB =~ ^[0-9]{1,4}$ ]]; then
     _conf_err "SWAP_SIZE_GIB must be a whole number (got '$SWAP_SIZE_GIB')"
   elif [[ $ENABLE_SWAP == true ]] && ((10#$SWAP_SIZE_GIB < 1)); then
     _conf_err "SWAP_SIZE_GIB must be >= 1 when ENABLE_SWAP=true"
