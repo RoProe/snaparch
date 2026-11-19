@@ -52,8 +52,8 @@ ENABLE_LTS=true
 # --- swap / hibernate
 # true: swapfile inside LUKS (@swap subvolume) + resume/hibernate configured
 ENABLE_SWAP=false
-# GiB, integer. Required (>= 1) if ENABLE_SWAP=true, ignored otherwise.
-# Max: disk size - 20 GiB. Hibernate needs roughly >= RAM size.
+# GiB, integer. Required (>= 0), but ignored if ENABLE_SWAP=false.
+# Max: disk size - 20 GiB. Hibernate needs roughly >= RAM size, so a size equal to RAM is recommendet.
 SWAP_SIZE_GIB=0
 
 # --- autologin
@@ -65,7 +65,7 @@ ENABLE_AUTOLOGIN=false
 # Secure Boot must be DISABLED during install. Keys are enrolled after first boot.
 ENABLE_SECUREBOOT=false
 # true: also enroll Microsoft CA (needed for Windows dual boot / some option ROMs).
-# Only used if ENABLE_SECUREBOOT=true. WARNING: wrong choice can brick some hardware.
+# Must be set to "false" unless ENABLE_SECUREBOOT=true. WARNING: wrong choice can brick some hardware.
 MICROSOFT_CA=false
 
 # --- GPU driver

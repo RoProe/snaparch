@@ -1,4 +1,4 @@
-# install/lib/conf.sh: config helpers, sourced by install.sh and chroot_setup.sh
+# install/lib/conf.sh: config helpers, TODO: sourced by install.sh and chroot_setup.sh
 
 # every key a conf must define
 CONF_KEYS=(
@@ -17,10 +17,20 @@ _conf_err() { CONF_ERRORS+=("$*"); }
 
 # load_conf <file>: source a conf file into the global scope
 load_conf() {
-  [[ -f $1 && -r $1 ]] || return 1
+  local f=$1 err
+  [[ -f $f && -r $f ]] || {
+    echo "conf: cannot read '$f'" >&2
+    return 1
+  }
+  # dry run in a separate process: -e catches failing commands, -u unset vars
+  if ! err=$(bash -euc 'source "$1"' _ "$f" 2>&1); then
+    echo "conf: error in '$f':" >&2
+    echo "$err" >&2
+    return 2
+  fi
   unset "${CONF_KEYS[@]}"
   # shellcheck source=../snaparch.conf.example
-  source "$1"
+  source "$f"
 }
 
 # _conf_bool <name>: value must be exactly true or false
@@ -113,6 +123,65 @@ validate_conf() {
   [[ $LOCALE =~ ^[A-Za-z_]+(\.[A-Za-z0-9-]+)?(@[A-Za-z]+)?$ ]] || _conf_err "LOCALE invalid: '$LOCALE'"
 
   [[ $KEYMAP =~ ^[A-Za-z0-9_.-]+$ ]] || _conf_err "KEYMAP invalid: '$KEYMAP'"
+
+  ((${#CONF_ERRORS[@]} == 0))
+}
+
+# check conf values against the running live system
+# requires a successful validate_conf and collects errors in CONF_ERRORS
+check_conf_env() {
+  CONF_ERRORS=()
+  local min_bytes=$((20 * 1024 ** 3)) size type
+
+  [[ -d /sys/firmware/efi ]] || _conf_err "not booted in UEFI mode"
+
+  # --- disk
+  if [[ ! -b $DISK ]]; then
+    _conf_err "DISK is not a block device: '$DISK'"
+  else
+    type=$(lsblk -dno TYPE "$DISK")
+    [[ $type == disk ]] || _conf_err "DISK must be a whole disk, not '$type': '$DISK'"
+    [[ -z $(lsblk -no MOUNTPOINTS "$DISK" | tr -d '[:space:]') ]] \
+      || _conf_err "DISK has mounted partitions (live medium?): '$DISK'"
+    size=$(lsblk -bdno SIZE "$DISK")
+    ((size >= min_bytes)) || _conf_err "DISK smaller than 20 GiB: '$DISK'"
+    if [[ $ENABLE_SWAP == true ]] \
+      && ((size - min_bytes < 10#$SWAP_SIZE_GIB * 1024 ** 3)); then
+      _conf_err "SWAP_SIZE_GIB too large for $DISK (max: disk - 20 GiB)"
+    fi
+  fi
+
+  # --- localisation
+  [[ -f /usr/share/zoneinfo/$TIMEZONE ]] || _conf_err "unknown TIMEZONE: '$TIMEZONE'"
+
+  # exact string compare
+  awk -v l="$LOCALE" '{ sub(/^#/, "") } $1 == l { f = 1 } END { exit !f }' \
+    /etc/locale.gen || _conf_err "LOCALE not in /etc/locale.gen: '$LOCALE'"
+
+  localectl list-keymaps | grep -Fxq -- "$KEYMAP" || _conf_err "unknown KEYMAP: '$KEYMAP'"
+
+  # --- cpu vendor
+  local vendor
+  vendor=$(awk -F': ' '/^vendor_id/ { print $2; exit }' /proc/cpuinfo)
+  case $CPU:$vendor in
+    amd:AuthenticAMD | intel:GenuineIntel) ;;
+    *) _conf_err "CPU=$CPU does not match this machine ($vendor)" ;;
+  esac
+
+  # --- packages: needs synced db (pacman -Sy)
+  local -A repo=()
+  local p
+  while read -r p; do repo[$p]=1; done < <(pacman -Slq)
+  for p in "${PKGS[@]}"; do
+    [[ -n ${repo[$p]-} ]] || _conf_err "package not in repos: '$p'"
+  done
+
+  # --- if secure boot -> is machine in setup mode?
+  local sm=/sys/firmware/efi/efivars/SetupMode-8be4df61-93ca-11d2-aa0d-00e098032b8c
+  if [[ $ENABLE_SECUREBOOT == true ]]; then
+    [[ -r $sm && $(od -An -tu1 -j4 -N1 "$sm" | tr -d ' ') == 1 ]] \
+      || _conf_err "ENABLE_SECUREBOOT=true but firmware is not in Setup Mode"
+  fi
 
   ((${#CONF_ERRORS[@]} == 0))
 }
